@@ -20,7 +20,7 @@ photo = FSInputFile("img/1.png")
 DATA_FILE = 'user_data.json'
 
 # Настройка логирования
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levellevelname)s - %(message)s")
 
 # Инициализация бота и диспетчера
 bot = Bot(token=API_TOKEN)
@@ -114,7 +114,7 @@ async def check_subscription(user_id):
             await bot.send_message(user_id, f"❌ Щоб побачити результати, підпишіться на канал: {CHANNEL_ID}", reply_markup=get_subscribe_button())
     except Exception as e:
         logging.error(f"Помилка перевірки підписки: {e}")
-        await bot.send_message(user_id, f"⚠ Помилка: {e}\n\nПеревірте, що бот є адміністратором у каналі!")
+        await bot.send_message(user_id, f"❌ Щоб побачити результати, підпишіться на канал: {CHANNEL_ID}", reply_markup=get_subscribe_button())
 
 # Проверка подписки по кнопке
 @router.callback_query(F.data == "check_subscription")
