@@ -12,7 +12,7 @@ from aiogram.types import FSInputFile
 
 from color_data import color_dict
 
-API_TOKEN = "7244256073:AAHO41bWchf_6ZvJHWGN_6A_JydJFc826l4"
+API_TOKEN = "7930245702:AAGUmtTAd1YV2zKDBLIBb1hgewYFaFtH3mI"
 CHANNEL_ID = "@tteessttooss"
 photo = FSInputFile("img/1.png")
 
@@ -46,17 +46,17 @@ user_progress = load_user_data().get('progress', defaultdict(int))
 # Генерация инлайн-кнопок для ответов
 def get_answer_buttons(question_id):
     buttons = [
-        [InlineKeyboardButton(text="✅ Да", callback_data=f"yes_{question_id}")],
-        [InlineKeyboardButton(text="❌ Нет", callback_data=f"no_{question_id}")],
-        [InlineKeyboardButton(text="⏭ Пропустить", callback_data=f"skip_{question_id}")]
+        [InlineKeyboardButton(text="✅ Так", callback_data=f"yes_{question_id}")],
+        [InlineKeyboardButton(text="❌ Ні", callback_data=f"no_{question_id}")],
+        [InlineKeyboardButton(text="⏭ Пропустити", callback_data=f"skip_{question_id}")]
     ]
     return InlineKeyboardMarkup(inline_keyboard=buttons)
 
 # Кнопка подписки
 def get_subscribe_button():
     return InlineKeyboardMarkup(inline_keyboard=[ 
-        [InlineKeyboardButton(text="🔔 Подписаться", url=f"https://t.me/{CHANNEL_ID[1:]}")],
-        [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="check_subscription")]
+        [InlineKeyboardButton(text="🔔 Підписатися", url=f"https://t.me/{CHANNEL_ID[1:]}")],
+        [InlineKeyboardButton(text="✅ Перевірити підписку", callback_data="check_subscription")]
     ])
 
 # Функция для сброса данных пользователя
@@ -65,29 +65,26 @@ def reset_user_data(user_id):
     user_progress[user_id] = 0
     update_user_data()
 
+# Функция для запроса начала теста
+def get_start_test_buttons():
+    buttons = [
+        [InlineKeyboardButton(text="✅ Так", callback_data="start_test")],
+        [InlineKeyboardButton(text="❌ Ні", callback_data="cancel_start")]
+    ]
+    return InlineKeyboardMarkup(inline_keyboard=buttons)
+
 # Обработчик команды /start
 @router.message(CommandStart())
 async def send_welcome(message: types.Message):
-    if message.from_user.id in user_scores:  # Если пользователь уже есть в данных
-        buttons = InlineKeyboardMarkup(inline_keyboard=[
-            [InlineKeyboardButton(text="🔄 Перепройти тест", callback_data="restart_test")],
-            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_restart")]
-        ])
-        await message.answer_photo(photo, caption="Вы уже проходили тест. Хотите пройти его заново?", reply_markup=buttons)
-    else:
-        user_scores[message.from_user.id] = {color: 0 for color in next(iter(color_dict.values()))}
-        user_progress[message.from_user.id] = 0
-        update_user_data()  # Сохраняем данные после инициализации
-        await message.answer_photo(photo, caption="Привет! Давай пройдем тест. Нажимай на кнопки под вопросами.")
-        await send_next_question(message.from_user.id)
+    await message.answer("Ви хочете пройти тест?", reply_markup=get_start_test_buttons())
 
 # Функция отправки вопросов
 async def send_next_question(user_id):
     question_id = user_progress[user_id]
     if question_id < len(color_dict):
         question_text = list(color_dict.keys())[question_id]
-        logging.debug(f"Отправляю вопрос {question_id + 1} пользователю {user_id}")
-        await bot.send_message(user_id, f"Вопрос {question_id + 1}: {question_text}", reply_markup=get_answer_buttons(question_id))
+        logging.debug(f"Відправляю питання {question_id + 1} користувачу {user_id}")
+        await bot.send_message(user_id, f"Питання {question_id + 1}: {question_text}", reply_markup=get_answer_buttons(question_id))
     else:
         await check_subscription(user_id)
 
@@ -114,10 +111,10 @@ async def check_subscription(user_id):
         if chat_member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.CREATOR, ChatMemberStatus.ADMINISTRATOR]:
             await send_results(user_id)
         else:
-            await bot.send_message(user_id, f"❌ Чтобы увидеть результаты, подпишитесь на канал: {CHANNEL_ID}", reply_markup=get_subscribe_button())
+            await bot.send_message(user_id, f"❌ Щоб побачити результати, підпишіться на канал: {CHANNEL_ID}", reply_markup=get_subscribe_button())
     except Exception as e:
-        logging.error(f"Ошибка проверки подписки: {e}")
-        await bot.send_message(user_id, f"⚠ Ошибка: {e}\n\nПроверь, что бот является администратором в канале!")
+        logging.error(f"Помилка перевірки підписки: {e}")
+        await bot.send_message(user_id, f"⚠ Помилка: {e}\n\nПеревірте, що бот є адміністратором у каналі!")
 
 # Проверка подписки по кнопке
 @router.callback_query(F.data == "check_subscription")
@@ -132,27 +129,51 @@ async def restart_test(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     reset_user_data(user_id)
     await callback_query.message.delete()
-    await callback_query.message.answer("Давай пройдем тест заново. Нажимай на кнопки под вопросами.")
+    await callback_query.message.answer("Давай пройдемо тест знову. Натискай на кнопки під питаннями.")
     await send_next_question(user_id)
 
 # Обработчик инлайн-кнопок для отмены перезапуска теста
 @router.callback_query(F.data == "cancel_restart")
 async def cancel_restart(callback_query: types.CallbackQuery):
     await callback_query.message.delete()
-    await callback_query.message.answer("Хорошо, продолжаем с текущими результатами.")
+    await callback_query.message.answer("Добре, продовжуємо з поточними результатами.")
+
+# Обработчик инлайн-кнопок для начала теста
+@router.callback_query(F.data == "start_test")
+async def start_test(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    if user_id in user_scores:  # Если пользователь уже есть в данных
+        buttons = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Пройти тест знову", callback_data="restart_test")],
+            [InlineKeyboardButton(text="❌ Скасувати", callback_data="cancel_restart")]
+        ])
+        await callback_query.message.answer_photo(photo, caption="Ви вже проходили тест. Хочете пройти його знову?", reply_markup=buttons)
+    else:
+        user_scores[user_id] = {color: 0 for color in next(iter(color_dict.values()))}
+        user_progress[user_id] = 0
+        update_user_data()  # Сохраняем данные после инициализации
+        await callback_query.message.answer_photo(photo, caption="Привіт! Давай пройдемо тест. Натискай на кнопки під питаннями.")
+        await send_next_question(user_id)
+    await callback_query.message.delete()
+
+# Обработчик инлайн-кнопок для отмены начала теста
+@router.callback_query(F.data == "cancel_start")
+async def cancel_start(callback_query: types.CallbackQuery):
+    await callback_query.message.delete()
+    await callback_query.message.answer("Добре, якщо передумаєте, просто надішліть команду /start.")
 
 # Критерии оценки для каждого цвета
 evaluation_criteria = {
-    "yellow": [(2, "очень хорошо"), (4, "хорошо"), (9, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
-    "green": [(2, "очень хорошо"), (4, "хорошо"), (9, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
-    "cyan": [(2, "очень хорошо"), (3, "хорошо"), (7, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
-    "red": [(2, "очень хорошо"), (5, "хорошо"), (9, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
-    "gray": [(2, "очень хорошо"), (4, "хорошо"), (7, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
-    "purple": [(0, "очень хорошо"), (3, "хорошо"), (5, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
-    "orange": [(0, "очень хорошо"), (1, "хорошо"), (4, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
-    "magenta": [(2, "очень хорошо"), (5, "хорошо"), (9, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
-    "blue": [(1, "очень хорошо"), (3, "хорошо"), (8, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
-    "pink": [(1, "очень хорошо"), (3, "хорошо"), (6, "удовлетворительно"), (float('inf'), "неудовлетворительно")]
+    "yellow": [(2, "дуже добре"), (4, "добре"), (9, "задовільно"), (float('inf'), "незадовільно")],
+    "green": [(2, "дуже добре"), (4, "добре"), (9, "задовільно"), (float('inf'), "незадовільно")],
+    "cyan": [(2, "дуже добре"), (3, "добре"), (7, "задовільно"), (float('inf'), "незадовільно")],
+    "red": [(2, "дуже добре"), (5, "добре"), (9, "задовільно"), (float('inf'), "незадовільно")],
+    "gray": [(2, "дуже добре"), (4, "добре"), (7, "задовільно"), (float('inf'), "незадовільно")],
+    "purple": [(0, "дуже добре"), (3, "добре"), (5, "задовільно"), (float('inf'), "незадовільно")],
+    "orange": [(0, "дуже добре"), (1, "добре"), (4, "задовільно"), (float('inf'), "незадовільно")],
+    "magenta": [(2, "дуже добре"), (5, "добре"), (9, "задовільно"), (float('inf'), "незадовільно")],
+    "blue": [(1, "дуже добре"), (3, "добре"), (8, "задовільно"), (float('inf'), "незадовільно")],
+    "pink": [(1, "дуже добре"), (3, "добре"), (6, "задовільно"), (float('inf'), "незадовільно")]
 }
 
 # Функция для оценки результатов по цвету
@@ -163,16 +184,16 @@ def evaluate_color_score(color, score):
 
 # Mapping of colors to system names
 color_to_system = {
-    "yellow": "Digestive system",
-    "green": "Gastrointestinal tract",
-    "cyan": "Cardiovascular system",
-    "red": "Nervous system",
-    "gray": "Immune system",
-    "purple": "Respiratory system",
-    "orange": "Urinary system",
-    "magenta": "Endocrine system",
-    "blue": "Musculoskeletal system",
-    "pink": "Skin"
+    "yellow": "Травна система",
+    "green": "Шлунково-кишковий тракт",
+    "cyan": "Серцево-судинна система",
+    "red": "Нервова система",
+    "gray": "Імунна система",
+    "purple": "Дихальна система",
+    "orange": "Сечовидільна система",
+    "magenta": "Ендокринна система",
+    "blue": "Опорно-рухова система",
+    "pink": "Шкіра"
 }
 
 # Отправка итоговых результатов
@@ -180,12 +201,12 @@ async def send_results(user_id):
     scores = user_scores[user_id]
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
 
-    result_text = "🎨 *Ваши результаты:*\n"
+    result_text = "🎨 *Ваші результати:*\n"
     for color, score in sorted_scores:
         evaluation = evaluate_color_score(color, score)
-        if "удовлетворительно" in evaluation or "неудовлетворительно" in evaluation:
+        if "задовільно" in evaluation or "незадовільно" in evaluation:
             system_name = color_to_system[color]
-            result_text += f"{system_name}: {score} баллов\n"
+            result_text += f"{system_name}: {score} балів\n"
             result_text += f"{evaluation}\n\n"
 
     await bot.send_photo(user_id, photo, caption=result_text.strip(), parse_mode="Markdown")
