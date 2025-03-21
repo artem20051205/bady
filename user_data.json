@@ -1,32 +1,32 @@
 {
     "scores": {
         "1433901799": {
-            "yellow": 0,
+            "yellow": 1,
             "green": 0,
-            "cyan": 0,
-            "red": 0,
-            "gray": 0,
+            "cyan": 1,
+            "red": 1,
+            "gray": 2,
             "purple": 0,
             "orange": 0,
-            "magenta": 0,
+            "magenta": 1,
             "blue": 0,
-            "pink": 0
+            "pink": 1
         },
         "1433901799": {
-            "yellow": 4,
-            "green": 4,
-            "cyan": 2,
-            "red": 3,
-            "gray": 5,
-            "purple": 3,
-            "orange": 2,
-            "magenta": 4,
-            "blue": 0,
-            "pink": 3
+            "yellow": 17,
+            "green": 17,
+            "cyan": 15,
+            "red": 20,
+            "gray": 15,
+            "purple": 8,
+            "orange": 7,
+            "magenta": 21,
+            "blue": 11,
+            "pink": 11
         }
     },
     "progress": {
-        "1433901799": 11,
-        "1433901799": 11
+        "1433901799": 2,
+        "1433901799": 49
     }
 }

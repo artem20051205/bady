@@ -8,11 +8,13 @@ from aiogram.enums import ChatMemberStatus
 from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart
 from aiogram import F
+from aiogram.types import FSInputFile
 
 from color_data import color_dict
 
 API_TOKEN = "7244256073:AAHO41bWchf_6ZvJHWGN_6A_JydJFc826l4"
 CHANNEL_ID = "@tteessttooss"
+photo = FSInputFile("img/1.png")
 
 # Путь к файлу, в котором будут храниться данные
 DATA_FILE = 'user_data.json'
@@ -71,12 +73,12 @@ async def send_welcome(message: types.Message):
             [InlineKeyboardButton(text="🔄 Перепройти тест", callback_data="restart_test")],
             [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_restart")]
         ])
-        await message.answer("Вы уже проходили тест. Хотите пройти его заново?", reply_markup=buttons)
+        await message.answer_photo(photo, caption="Вы уже проходили тест. Хотите пройти его заново?", reply_markup=buttons)
     else:
         user_scores[message.from_user.id] = {color: 0 for color in next(iter(color_dict.values()))}
         user_progress[message.from_user.id] = 0
         update_user_data()  # Сохраняем данные после инициализации
-        await message.answer("Привет! Давай пройдем тест. Нажимай на кнопки под вопросами.")
+        await message.answer_photo(photo, caption="Привет! Давай пройдем тест. Нажимай на кнопки под вопросами.")
         await send_next_question(message.from_user.id)
 
 # Функция отправки вопросов
@@ -159,6 +161,20 @@ def evaluate_color_score(color, score):
         if score <= threshold:
             return f"{color.capitalize()}: {evaluation}"
 
+# Mapping of colors to system names
+color_to_system = {
+    "yellow": "Digestive system",
+    "green": "Gastrointestinal tract",
+    "cyan": "Cardiovascular system",
+    "red": "Nervous system",
+    "gray": "Immune system",
+    "purple": "Respiratory system",
+    "orange": "Urinary system",
+    "magenta": "Endocrine system",
+    "blue": "Musculoskeletal system",
+    "pink": "Skin"
+}
+
 # Отправка итоговых результатов
 async def send_results(user_id):
     scores = user_scores[user_id]
@@ -166,10 +182,13 @@ async def send_results(user_id):
 
     result_text = "🎨 *Ваши результаты:*\n"
     for color, score in sorted_scores:
-        result_text += f"{color.capitalize()}: {score} баллов\n"
-        result_text += f"\n{evaluate_color_score(color, score)}"
+        evaluation = evaluate_color_score(color, score)
+        if "удовлетворительно" in evaluation or "неудовлетворительно" in evaluation:
+            system_name = color_to_system[color]
+            result_text += f"{system_name}: {score} баллов\n"
+            result_text += f"{evaluation}\n\n"
 
-    await bot.send_message(user_id, result_text, parse_mode="Markdown")
+    await bot.send_photo(user_id, photo, caption=result_text.strip(), parse_mode="Markdown")
 
 # Сохранение данных после каждого изменения
 def update_user_data():
