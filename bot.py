@@ -57,15 +57,27 @@ def get_subscribe_button():
         [InlineKeyboardButton(text="✅ Проверить подписку", callback_data="check_subscription")]
     ])
 
+# Функция для сброса данных пользователя
+def reset_user_data(user_id):
+    user_scores[user_id] = {color: 0 for color in next(iter(color_dict.values()))}
+    user_progress[user_id] = 0
+    update_user_data()
+
 # Обработчик команды /start
 @router.message(CommandStart())
 async def send_welcome(message: types.Message):
-    if message.from_user.id not in user_scores:  # Если пользователя нет в данных, добавим его
+    if message.from_user.id in user_scores:  # Если пользователь уже есть в данных
+        buttons = InlineKeyboardMarkup(inline_keyboard=[
+            [InlineKeyboardButton(text="🔄 Перепройти тест", callback_data="restart_test")],
+            [InlineKeyboardButton(text="❌ Отмена", callback_data="cancel_restart")]
+        ])
+        await message.answer("Вы уже проходили тест. Хотите пройти его заново?", reply_markup=buttons)
+    else:
         user_scores[message.from_user.id] = {color: 0 for color in next(iter(color_dict.values()))}
         user_progress[message.from_user.id] = 0
-    update_user_data()  # Сохраняем данные после инициализации
-    await message.answer("Привет! Давай пройдем тест. Нажимай на кнопки под вопросами.")
-    await send_next_question(message.from_user.id)
+        update_user_data()  # Сохраняем данные после инициализации
+        await message.answer("Привет! Давай пройдем тест. Нажимай на кнопки под вопросами.")
+        await send_next_question(message.from_user.id)
 
 # Функция отправки вопросов
 async def send_next_question(user_id):
@@ -112,16 +124,40 @@ async def check_subscription_callback(callback_query: types.CallbackQuery):
     await callback_query.message.delete()
     await check_subscription(user_id)
 
-# Функция для оценки результатов по цвету "yellow"
-def evaluate_yellow_score(score):
-    if score <= 2:
-        return "Digestive system: очень хорошо"
-    elif score <= 4:
-        return "Digestive system: хорошо"
-    elif score <= 9:
-        return "Digestive system: удовлетворительно"
-    else:
-        return "Digestive system: неудовлетворительно"
+# Обработчик инлайн-кнопок для перезапуска теста
+@router.callback_query(F.data == "restart_test")
+async def restart_test(callback_query: types.CallbackQuery):
+    user_id = callback_query.from_user.id
+    reset_user_data(user_id)
+    await callback_query.message.delete()
+    await callback_query.message.answer("Давай пройдем тест заново. Нажимай на кнопки под вопросами.")
+    await send_next_question(user_id)
+
+# Обработчик инлайн-кнопок для отмены перезапуска теста
+@router.callback_query(F.data == "cancel_restart")
+async def cancel_restart(callback_query: types.CallbackQuery):
+    await callback_query.message.delete()
+    await callback_query.message.answer("Хорошо, продолжаем с текущими результатами.")
+
+# Критерии оценки для каждого цвета
+evaluation_criteria = {
+    "yellow": [(2, "очень хорошо"), (4, "хорошо"), (9, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
+    "green": [(2, "очень хорошо"), (4, "хорошо"), (9, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
+    "cyan": [(2, "очень хорошо"), (3, "хорошо"), (7, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
+    "red": [(2, "очень хорошо"), (5, "хорошо"), (9, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
+    "gray": [(2, "очень хорошо"), (4, "хорошо"), (7, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
+    "purple": [(0, "очень хорошо"), (3, "хорошо"), (5, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
+    "orange": [(0, "очень хорошо"), (1, "хорошо"), (4, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
+    "magenta": [(2, "очень хорошо"), (5, "хорошо"), (9, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
+    "blue": [(1, "очень хорошо"), (3, "хорошо"), (8, "удовлетворительно"), (float('inf'), "неудовлетворительно")],
+    "pink": [(1, "очень хорошо"), (3, "хорошо"), (6, "удовлетворительно"), (float('inf'), "неудовлетворительно")]
+}
+
+# Функция для оценки результатов по цвету
+def evaluate_color_score(color, score):
+    for threshold, evaluation in evaluation_criteria[color]:
+        if score <= threshold:
+            return f"{color.capitalize()}: {evaluation}"
 
 # Отправка итоговых результатов
 async def send_results(user_id):
@@ -131,10 +167,7 @@ async def send_results(user_id):
     result_text = "🎨 *Ваши результаты:*\n"
     for color, score in sorted_scores:
         result_text += f"{color.capitalize()}: {score} баллов\n"
-
-    # Добавляем оценку для цвета "yellow"
-    yellow_score = scores.get("yellow", 0)
-    result_text += f"\n{evaluate_yellow_score(yellow_score)}"
+        result_text += f"\n{evaluate_color_score(color, score)}"
 
     await bot.send_message(user_id, result_text, parse_mode="Markdown")
 

@@ -1,6 +1,18 @@
 {
     "scores": {
         "1433901799": {
+            "yellow": 0,
+            "green": 0,
+            "cyan": 0,
+            "red": 0,
+            "gray": 0,
+            "purple": 0,
+            "orange": 0,
+            "magenta": 0,
+            "blue": 0,
+            "pink": 0
+        },
+        "1433901799": {
             "yellow": 4,
             "green": 4,
             "cyan": 2,
@@ -14,6 +26,7 @@
         }
     },
     "progress": {
+        "1433901799": 11,
         "1433901799": 11
     }
 }
