@@ -1,32 +1,45 @@
 {
     "scores": {
         "971198023": {
-            "yellow": 8,
-            "green": 12,
-            "cyan": 7,
-            "red": 12,
-            "gray": 9,
-            "purple": 4,
-            "orange": 4,
-            "magenta": 14,
-            "blue": 8,
-            "pink": 4
+            "yellow": 1,
+            "green": 0,
+            "cyan": 1,
+            "red": 1,
+            "gray": 1,
+            "purple": 0,
+            "orange": 0,
+            "magenta": 1,
+            "blue": 0,
+            "pink": 1
         },
         "971198023": {
-            "yellow": 8,
-            "green": 9,
-            "cyan": 7,
-            "red": 7,
-            "gray": 5,
-            "purple": 6,
-            "orange": 3,
-            "magenta": 7,
-            "blue": 5,
-            "pink": 6
+            "yellow": 1,
+            "green": 0,
+            "cyan": 1,
+            "red": 1,
+            "gray": 1,
+            "purple": 0,
+            "orange": 0,
+            "magenta": 1,
+            "blue": 0,
+            "pink": 1
+        },
+        "1433901799": {
+            "yellow": 0,
+            "green": 0,
+            "cyan": 0,
+            "red": 0,
+            "gray": 0,
+            "purple": 0,
+            "orange": 0,
+            "magenta": 0,
+            "blue": 0,
+            "pink": 1
         }
     },
     "progress": {
-        "971198023": 49,
-        "971198023": 49
+        "971198023": 2,
+        "971198023": 2,
+        "1433901799": 4
     }
 }

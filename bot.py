@@ -9,12 +9,14 @@ from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFil
 from aiogram.filters import CommandStart
 from color_data import color_dict, evaluation_criteria, color_to_system, evaluation_icons
 import config
+import aiofiles
 
+# Константы и переменные
 API_TOKEN = config.API_TOKEN
 CHANNEL_ID = config.CHANNEL_ID
 DATA_FILE = config.DATA_FILE
 PHOTO_PATH = config.PHOTO_PATH
-
+data_lock = asyncio.Lock()
 
 # Логирование
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
@@ -24,35 +26,50 @@ bot = Bot(token=API_TOKEN)
 router = Router()
 dp = Dispatcher()
 
-# Загрузка данных пользователей из файла
+# Глобальные переменные для хранения данных пользователей
+user_data = {}
+user_scores = defaultdict(lambda: {color: 0 for color in list(color_dict.values())[0]})
+user_progress = defaultdict(int)
 
-def load_user_data():
-    try:
+# Функции для работы с данными
+async def load_user_data():
+    async with data_lock:
         if os.path.exists(DATA_FILE):
-            with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                return json.load(f)
-    except Exception as e:
-        logging.error(f"Ошибка загрузки данных: {e}")
+            try:
+                async with aiofiles.open(DATA_FILE, 'r', encoding='utf-8') as f:
+                    content = await f.read()
+                    return json.loads(content) if content else {'scores': {}, 'progress': {}}
+            except Exception as e:
+                logging.error(f"Ошибка загрузки данных: {e}")
     return {'scores': {}, 'progress': {}}
 
-def save_user_data(data):
+async def save_user_data(data):
+    async with data_lock:
+        try:
+            async with aiofiles.open(DATA_FILE, 'w', encoding='utf-8') as f:
+                await f.write(json.dumps(data, ensure_ascii=False, indent=4))
+        except Exception as e:
+            logging.error(f"Ошибка сохранения данных: {e}")
+
+async def init_user_data():
+    global user_data, user_scores, user_progress
+    user_data = await load_user_data()
+    user_scores = defaultdict(lambda: {color: 0 for color in list(color_dict.values())[0]}, user_data.get('scores', {}))
+    user_progress = defaultdict(int, user_data.get('progress', {}))
+
+async def update_user_data():
+    asyncio.create_task(save_user_data({'scores': dict(user_scores), 'progress': dict(user_progress)}))
+
+# Проверка подписки
+async def is_user_subscribed(user_id: int) -> bool:
     try:
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+        chat_member = await bot.get_chat_member(CHANNEL_ID, user_id)
+        return chat_member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]
     except Exception as e:
-        logging.error(f"Ошибка сохранения данных: {e}")
-
-# Инициализация данных пользователей
-user_data = load_user_data()
-user_scores = defaultdict(lambda: {color: 0 for color in list(color_dict.values())[0]}, user_data.get('scores', {}))
-user_progress = defaultdict(int, user_data.get('progress', {}))
-
-# Функция обновления данных пользователей
-def update_user_data():
-    save_user_data({'scores': dict(user_scores), 'progress': dict(user_progress)})
+        logging.error(f"Ошибка проверки подписки: {e}")
+        return False
 
 # Генерация кнопок
-
 def get_answer_buttons(question_id):
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="✅ Так", callback_data=f"yes_{question_id}")],
@@ -62,7 +79,7 @@ def get_answer_buttons(question_id):
 
 def get_subscribe_button():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔔 Підписатися", url=f"https://t.me/{CHANNEL_ID}")],
+        [InlineKeyboardButton(text="🔔 Підписатися", url=f"https://t.me/tteessttooss")],
         [InlineKeyboardButton(text="✅ Перевірити підписку", callback_data="check_subscription")]
     ])
 
@@ -72,13 +89,13 @@ def get_start_test_buttons():
         [InlineKeyboardButton(text="❌ Ні", callback_data="cancel_start")]
     ])
 
-# Кнопки для начала нового теста
 def get_restart_test_buttons():
     return InlineKeyboardMarkup(inline_keyboard=[
         [InlineKeyboardButton(text="🔄 Так, почати заново", callback_data="restart_test")],
         [InlineKeyboardButton(text="❌ Ні", callback_data="cancel_restart")]
     ])
 
+# Обработчики команд
 @router.message(CommandStart())
 async def send_welcome(message: types.Message):
     user_id = message.from_user.id
@@ -87,14 +104,13 @@ async def send_welcome(message: types.Message):
     else:
         await message.answer("Ви хочете пройти тест?", reply_markup=get_start_test_buttons())
 
-# Обработка перезапуска теста
 @router.callback_query(lambda c: c.data == "restart_test")
 async def restart_test(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     user_scores[user_id] = {color: 0 for color in list(color_dict.values())[0]}
     user_progress[user_id] = 0
-    update_user_data()
-    
+    await update_user_data()
+
     await callback_query.message.edit_text("Починаємо тест заново! Ось перше питання:")
     await send_next_question(user_id, callback_query.message)
 
@@ -107,9 +123,8 @@ async def start_test(callback_query: types.CallbackQuery):
     user_id = callback_query.from_user.id
     user_scores[user_id] = {color: 0 for color in list(color_dict.values())[0]}
     user_progress[user_id] = 0
-    update_user_data()
-    
-    # Изменяем сообщение, а не удаляем
+    await update_user_data()
+
     await callback_query.message.edit_text("Починаємо тест! Ось перше питання:")
     await send_next_question(user_id, callback_query.message)
 
@@ -117,12 +132,7 @@ async def send_next_question(user_id, message):
     question_id = user_progress[user_id]
     if question_id < len(color_dict):
         question_text = list(color_dict.keys())[question_id]
-        
-        # Изменяем сообщение с новым вопросом
-        await message.edit_text(
-            f"Питання {question_id + 1}: {question_text}",
-            reply_markup=get_answer_buttons(question_id)
-        )
+        await message.edit_text(f"Питання {question_id + 1}: {question_text}", reply_markup=get_answer_buttons(question_id))
     else:
         await check_subscription(user_id, message)
 
@@ -135,63 +145,69 @@ async def handle_answer(callback_query: types.CallbackQuery):
     if answer_type == "yes":
         for color, value in color_dict[list(color_dict.keys())[question_id]].items():
             user_scores[user_id][color] += value
-    
+
     user_progress[user_id] += 1
-    update_user_data()
+    await update_user_data()
     
-    # Обновляем сообщение с новым вопросом
     await send_next_question(user_id, callback_query.message)
 
 async def check_subscription(user_id, message):
-    try:
-        chat_member = await bot.get_chat_member(f"@{CHANNEL_ID}", user_id)
-        if chat_member.status not in ["left", "kicked"]:
-            await send_results(user_id, message)  # Передаем message для редактирования
-        else:
-            await message.edit_text(
-                "❌ Щоб побачити результати, підпишіться на канал:",
-                reply_markup=get_subscribe_button()
-            )
-    except Exception as e:
-        logging.error(f"Помилка перевірки підписки: {e}")
-        await message.edit_text(
-            "❌ Щоб побачити результати, підпишіться на канал:",
-            reply_markup=get_subscribe_button()
-        )
+    if await is_user_subscribed(user_id):
+        await send_results(user_id, message)
+    else:
+        await message.edit_text("❌ Щоб побачити результати, підпишіться на канал:", reply_markup=get_subscribe_button())
 
 @router.callback_query(lambda c: c.data == "check_subscription")
 async def check_subscription_callback(callback_query: types.CallbackQuery):
-    await callback_query.message.delete()
-    await check_subscription(callback_query.from_user.id)
+    user_id = callback_query.from_user.id
+    is_subscribed = await is_user_subscribed(user_id)
 
-# Функция отправки результатов пользователю
+    if is_subscribed:
+        await callback_query.message.answer("✅ Ви підписані! Ось ваші результати:")
+        await send_results(user_id, callback_query.message)
+    else:
+        await callback_query.message.edit_text(
+            "❌ Щоб побачити результати, підпишіться на канал:", 
+            reply_markup=get_subscribe_button()
+        )
+
+    # Проверяем, изменилось ли сообщение перед обновлением
+    if callback_query.message.text != new_text:
+        await callback_query.message.edit_text(new_text, reply_markup=new_markup)
+    else:
+        await callback_query.answer("Повідомлення вже актуальне!", show_alert=True)
+
 async def send_results(user_id, message):
     scores = user_scores.get(user_id, {})
-    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
     
+    if not scores:
+        await message.answer("⚠️ Виникла помилка! Не вдалося отримати ваші результати.")
+        logging.error(f"❌ Помилка: результати для {user_id} відсутні в user_scores.")
+        return
+
+    sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+
     result_text = "⬇️ *Ваші результати:*\n"
     for color, score in sorted_scores:
-        evaluation = evaluate_color_score(color, score)  # Получаем текстовую оценку
+        evaluation = evaluate_color_score(color, score)
         system_name = color_to_system.get(color, "Невідома система")
-        icon = evaluation_icons.get(evaluation, "⚪")  # Получаем цветную иконку
-        
-        result_text += f"{icon} {system_name}: {evaluation}\n"  # Формируем строку результата
-    
-    try:
-        photo = FSInputFile(PHOTO_PATH)
-        await bot.send_photo(user_id, photo, caption=result_text.strip(), parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Ошибка отправки фото: {e}")
-        await message.edit_text(result_text.strip(), parse_mode="Markdown")
+        icon = evaluation_icons.get(evaluation, "⚪")
+        result_text += f"{icon} *{system_name}:* {evaluation}\n"
 
-# Функция для оценки результатов по цвету
+    # Отправляем новое сообщение вместо редактирования
+    try:
+        await message.answer(result_text.strip(), parse_mode="Markdown")
+        logging.info(f"✅ Успішно відправлені результати для {user_id}")
+    except Exception as e:
+        logging.error(f"❌ Помилка надсилання результатів: {e}")
+
 def evaluate_color_score(color, score):
     for threshold, evaluation in evaluation_criteria[color]:
         if score <= threshold:
             return evaluation
 
-# Запуск бота
 async def main():
+    await init_user_data()
     dp.include_router(router)
     await bot.delete_webhook(drop_pending_updates=True)
     await dp.start_polling(bot)
