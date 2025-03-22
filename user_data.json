@@ -1,58 +1,32 @@
 {
     "scores": {
-        "804316281": {
-            "yellow": 0,
-            "green": 0,
-            "cyan": 0,
-            "red": 0,
-            "gray": 0,
-            "purple": 0,
-            "orange": 0,
-            "magenta": 0,
-            "blue": 0,
-            "pink": 0
-        },
-        "723968088": {
-            "yellow": 6,
-            "green": 5,
-            "cyan": 6,
-            "red": 10,
-            "gray": 5,
-            "purple": 3,
-            "orange": 1,
-            "magenta": 11,
-            "blue": 3,
-            "pink": 3
-        },
-        "861535340": {
-            "yellow": 10,
-            "green": 6,
-            "cyan": 5,
-            "red": 8,
-            "gray": 10,
+        "971198023": {
+            "yellow": 8,
+            "green": 12,
+            "cyan": 7,
+            "red": 12,
+            "gray": 9,
             "purple": 4,
-            "orange": 1,
-            "magenta": 6,
+            "orange": 4,
+            "magenta": 14,
+            "blue": 8,
+            "pink": 4
+        },
+        "971198023": {
+            "yellow": 8,
+            "green": 9,
+            "cyan": 7,
+            "red": 7,
+            "gray": 5,
+            "purple": 6,
+            "orange": 3,
+            "magenta": 7,
             "blue": 5,
             "pink": 6
-        },
-        "5775341570": {
-            "yellow": 17,
-            "green": 17,
-            "cyan": 15,
-            "red": 20,
-            "gray": 15,
-            "purple": 8,
-            "orange": 7,
-            "magenta": 21,
-            "blue": 11,
-            "pink": 11
         }
     },
     "progress": {
-        "804316281": 11,
-        "723968088": 49,
-        "861535340": 49,
-        "5775341570": 49
+        "971198023": 49,
+        "971198023": 49
     }
 }
