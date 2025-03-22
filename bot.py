@@ -5,151 +5,104 @@ import os
 from collections import defaultdict
 from aiogram import Bot, Dispatcher, types, Router
 from aiogram.enums import ChatMemberStatus
-from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton, FSInputFile
+from aiogram.types import InlineKeyboardMarkup, InlineKeyboardButton
 from aiogram.filters import CommandStart
-from color_data import color_dict, evaluation_criteria, color_to_system, evaluation_icons
+from aiogram.types import FSInputFile
 import config
 import aiofiles
+from color_data import color_dict, evaluation_criteria, color_to_system, evaluation_icons
 
-# Константы и переменные
-API_TOKEN = config.API_TOKEN
-CHANNEL_ID = config.CHANNEL_ID
-DATA_FILE = config.DATA_FILE
-PHOTO_PATH = config.PHOTO_PATH
+# Константы
+API_TOKEN, CHANNEL_ID, DATA_FILE = config.API_TOKEN, config.CHANNEL_ID, config.DATA_FILE
+bot, dp, router = Bot(token=API_TOKEN), Dispatcher(), Router()
 data_lock = asyncio.Lock()
 
-# Логирование
-logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
-
-# Инициализация бота и диспетчера
-bot = Bot(token=API_TOKEN)
-router = Router()
-dp = Dispatcher()
-
-# Глобальные переменные для хранения данных пользователей
+# Глобальные переменные
 user_data = {}
 user_scores = defaultdict(lambda: {color: 0 for color in list(color_dict.values())[0]})
 user_progress = defaultdict(int)
 
-# Функции для работы с данными
+# Логирование
+logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
+
+# Работа с данными
 async def load_user_data():
-    async with data_lock:
-        if os.path.exists(DATA_FILE):
+    if os.path.exists(DATA_FILE):
+        async with aiofiles.open(DATA_FILE, 'r', encoding='utf-8') as f:
             try:
-                async with aiofiles.open(DATA_FILE, 'r', encoding='utf-8') as f:
-                    content = await f.read()
-                    return json.loads(content) if content else {'scores': {}, 'progress': {}}
-            except Exception as e:
-                logging.error(f"Ошибка загрузки данных: {e}")
+                return json.loads(await f.read()) or {'scores': {}, 'progress': {}}
+            except json.JSONDecodeError:
+                logging.error("Ошибка загрузки данных")
     return {'scores': {}, 'progress': {}}
 
-async def save_user_data(data):
-    async with data_lock:
-        try:
-            async with aiofiles.open(DATA_FILE, 'w', encoding='utf-8') as f:
-                await f.write(json.dumps(data, ensure_ascii=False, indent=4))
-        except Exception as e:
-            logging.error(f"Ошибка сохранения данных: {e}")
+async def save_user_data():
+    async with data_lock, aiofiles.open(DATA_FILE, 'w', encoding='utf-8') as f:
+        await f.write(json.dumps({'scores': dict(user_scores), 'progress': dict(user_progress)}, ensure_ascii=False, indent=4))
 
 async def init_user_data():
     global user_data, user_scores, user_progress
     user_data = await load_user_data()
-    user_scores = defaultdict(lambda: {color: 0 for color in list(color_dict.values())[0]}, user_data.get('scores', {}))
-    user_progress = defaultdict(int, user_data.get('progress', {}))
-
-async def update_user_data():
-    asyncio.create_task(save_user_data({'scores': dict(user_scores), 'progress': dict(user_progress)}))
+    user_scores.update(user_data.get('scores', {}))
+    user_progress.update(user_data.get('progress', {}))
 
 # Проверка подписки
 async def is_user_subscribed(user_id: int) -> bool:
     try:
-        chat_member = await bot.get_chat_member(CHANNEL_ID, user_id)
-        return chat_member.status in [ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR]
+        status = (await bot.get_chat_member(CHANNEL_ID, user_id)).status
+        return status in {ChatMemberStatus.MEMBER, ChatMemberStatus.ADMINISTRATOR, ChatMemberStatus.CREATOR}
     except Exception as e:
         logging.error(f"Ошибка проверки подписки: {e}")
-        return False
+    return False
 
-# Генерация кнопок
-def get_answer_buttons(question_id):
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Так", callback_data=f"yes_{question_id}")],
-        [InlineKeyboardButton(text="❌ Ні", callback_data=f"no_{question_id}")],
-        [InlineKeyboardButton(text="⏭ Пропустити", callback_data=f"skip_{question_id}")]
-    ])
+# Кнопки
+def create_buttons(buttons):
+    return InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=callback)] for text, callback in buttons])
+
+def get_answer_buttons(qid):
+    return create_buttons([("✅ Так", f"yes_{qid}"), ("❌ Ні", f"no_{qid}"), ("⏭ Пропустити", f"skip_{qid}")])
 
 def get_subscribe_button():
     return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔔 Підписатися", url=f"https://t.me/tteessttooss")],
+        [InlineKeyboardButton(text="🔔 Підписатися", url="https://t.me/tteessttooss")],
         [InlineKeyboardButton(text="✅ Перевірити підписку", callback_data="check_subscription")]
     ])
 
-def get_start_test_buttons():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="✅ Так", callback_data="start_test")],
-        [InlineKeyboardButton(text="❌ Ні", callback_data="cancel_start")]
-    ])
+def get_start_buttons():
+    return create_buttons([("✅ Так", "start_test"), ("❌ Ні", "cancel_start")])
 
-def get_restart_test_buttons():
-    return InlineKeyboardMarkup(inline_keyboard=[
-        [InlineKeyboardButton(text="🔄 Так, почати заново", callback_data="restart_test")],
-        [InlineKeyboardButton(text="❌ Ні", callback_data="cancel_restart")]
-    ])
+def get_restart_buttons():
+    return create_buttons([("🔄 Так, почати заново", "restart_test"), ("❌ Ні", "cancel_restart")])
 
-# Обработчики команд
+# Обработчики
 @router.message(CommandStart())
 async def send_welcome(message: types.Message):
-    user_id = message.from_user.id
-    if user_id in user_progress and user_progress[user_id] > 0:
-        await message.answer("Ви вже проходили тест. Хочете пройти ще раз?", reply_markup=get_restart_test_buttons())
-    else:
-        await message.answer("Ви хочете пройти тест?", reply_markup=get_start_test_buttons())
+    await message.answer("Ви хочете пройти тест?", reply_markup=get_restart_buttons() if user_progress[message.from_user.id] else get_start_buttons())
 
-@router.callback_query(lambda c: c.data == "restart_test")
-async def restart_test(callback_query: types.CallbackQuery):
-    user_id = callback_query.from_user.id
+@router.callback_query(lambda c: c.data in {"restart_test", "start_test"})
+async def start_or_restart_test(callback: types.CallbackQuery):
+    user_id = callback.from_user.id
     user_scores[user_id] = {color: 0 for color in list(color_dict.values())[0]}
     user_progress[user_id] = 0
-    await update_user_data()
-
-    await callback_query.message.edit_text("Починаємо тест заново! Ось перше питання:")
-    await send_next_question(user_id, callback_query.message)
-
-@router.callback_query(lambda c: c.data == "cancel_restart")
-async def cancel_restart(callback_query: types.CallbackQuery):
-    await callback_query.message.edit_text("Добре! Якщо передумаєте, просто напишіть /start")
-
-@router.callback_query(lambda c: c.data == "start_test")
-async def start_test(callback_query: types.CallbackQuery):
-    user_id = callback_query.from_user.id
-    user_scores[user_id] = {color: 0 for color in list(color_dict.values())[0]}
-    user_progress[user_id] = 0
-    await update_user_data()
-
-    await callback_query.message.edit_text("Починаємо тест! Ось перше питання:")
-    await send_next_question(user_id, callback_query.message)
+    await save_user_data()
+    await callback.message.edit_text("Починаємо тест! Ось перше питання:")
+    await send_next_question(user_id, callback.message)
 
 async def send_next_question(user_id, message):
-    question_id = user_progress[user_id]
-    if question_id < len(color_dict):
-        question_text = list(color_dict.keys())[question_id]
-        await message.edit_text(f"Питання {question_id + 1}: {question_text}", reply_markup=get_answer_buttons(question_id))
+    qid = user_progress[user_id]
+    if qid < len(color_dict):
+        await message.edit_text(f"Питання {qid + 1}: {list(color_dict.keys())[qid]}", reply_markup=get_answer_buttons(qid))
     else:
         await check_subscription(user_id, message)
 
 @router.callback_query(lambda c: c.data.startswith(('yes_', 'no_', 'skip_')))
-async def handle_answer(callback_query: types.CallbackQuery):
-    user_id = callback_query.from_user.id
-    answer_type, question_id = callback_query.data.split('_')
-    question_id = int(question_id)
-
-    if answer_type == "yes":
-        for color, value in color_dict[list(color_dict.keys())[question_id]].items():
+async def handle_answer(callback: types.CallbackQuery):
+    user_id, qid = callback.from_user.id, int(callback.data.split('_')[1])
+    if "yes" in callback.data:
+        for color, value in color_dict[list(color_dict.keys())[qid]].items():
             user_scores[user_id][color] += value
-
     user_progress[user_id] += 1
-    await update_user_data()
-    
-    await send_next_question(user_id, callback_query.message)
+    await save_user_data()
+    await send_next_question(user_id, callback.message)
 
 async def check_subscription(user_id, message):
     if await is_user_subscribed(user_id):
@@ -158,53 +111,35 @@ async def check_subscription(user_id, message):
         await message.edit_text("❌ Щоб побачити результати, підпишіться на канал:", reply_markup=get_subscribe_button())
 
 @router.callback_query(lambda c: c.data == "check_subscription")
-async def check_subscription_callback(callback_query: types.CallbackQuery):
-    user_id = callback_query.from_user.id
-    is_subscribed = await is_user_subscribed(user_id)
-
-    if is_subscribed:
-        await callback_query.message.answer("✅ Ви підписані! Ось ваші результати:")
-        await send_results(user_id, callback_query.message)
-    else:
-        await callback_query.message.edit_text(
-            "❌ Щоб побачити результати, підпишіться на канал:", 
-            reply_markup=get_subscribe_button()
-        )
-
-    # Проверяем, изменилось ли сообщение перед обновлением
-    if callback_query.message.text != new_text:
-        await callback_query.message.edit_text(new_text, reply_markup=new_markup)
-    else:
-        await callback_query.answer("Повідомлення вже актуальне!", show_alert=True)
+async def check_subscription_callback(callback: types.CallbackQuery):
+    await callback.message.answer("✅ Ви підписані! Ось ваші результати:") if await is_user_subscribed(callback.from_user.id) else await callback.message.edit_text("❌ Підпишіться на канал:", reply_markup=get_subscribe_button())
+    if await is_user_subscribed(callback.from_user.id):
+        await send_results(callback.from_user.id, callback.message)
 
 async def send_results(user_id, message):
     scores = user_scores.get(user_id, {})
-    
     if not scores:
-        await message.answer("⚠️ Виникла помилка! Не вдалося отримати ваші результати.")
-        logging.error(f"❌ Помилка: результати для {user_id} відсутні в user_scores.")
-        return
+        return await message.answer("⚠️ Помилка! Не вдалося отримати результати.")
 
     sorted_scores = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    result_text = "⬇️ *Ваші результати:*\n" + "\n".join(
+        f"{evaluation_icons.get(evaluate_color_score(color, score), '⚪')} *{color_to_system.get(color, 'Невідома система')}:* {evaluate_color_score(color, score)}"
+        for color, score in sorted_scores
+    )
 
-    result_text = "⬇️ *Ваші результати:*\n"
-    for color, score in sorted_scores:
-        evaluation = evaluate_color_score(color, score)
-        system_name = color_to_system.get(color, "Невідома система")
-        icon = evaluation_icons.get(evaluation, "⚪")
-        result_text += f"{icon} *{system_name}:* {evaluation}\n"
-
-    # Отправляем новое сообщение вместо редактирования
     try:
-        await message.answer(result_text.strip(), parse_mode="Markdown")
-        logging.info(f"✅ Успішно відправлені результати для {user_id}")
+        # Загружаем фото и отправляем вместе с текстом
+        photo = FSInputFile("img/1.png")  # Указываем путь к фото
+        await bot.send_photo(chat_id=user_id, photo=photo, caption=result_text, parse_mode="Markdown")
+        
+        # Убираем кнопки, редактируя предыдущее сообщение
+        await message.edit_text("✅ Ваші результати надіслано!", reply_markup=None)
     except Exception as e:
-        logging.error(f"❌ Помилка надсилання результатів: {e}")
+        logging.error(f"❌ Ошибка при отправке фото или редактировании сообщения: {e}")
+        await message.answer(result_text.strip(), parse_mode="Markdown")
 
 def evaluate_color_score(color, score):
-    for threshold, evaluation in evaluation_criteria[color]:
-        if score <= threshold:
-            return evaluation
+    return next((eval for threshold, eval in evaluation_criteria[color] if score <= threshold), "Невідомо")
 
 async def main():
     await init_user_data()

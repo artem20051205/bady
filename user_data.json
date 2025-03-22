@@ -11,35 +11,9 @@
             "magenta": 1,
             "blue": 0,
             "pink": 1
-        },
-        "971198023": {
-            "yellow": 1,
-            "green": 0,
-            "cyan": 1,
-            "red": 1,
-            "gray": 1,
-            "purple": 0,
-            "orange": 0,
-            "magenta": 1,
-            "blue": 0,
-            "pink": 1
-        },
-        "1433901799": {
-            "yellow": 0,
-            "green": 0,
-            "cyan": 0,
-            "red": 0,
-            "gray": 0,
-            "purple": 0,
-            "orange": 0,
-            "magenta": 0,
-            "blue": 0,
-            "pink": 1
         }
     },
     "progress": {
-        "971198023": 2,
-        "971198023": 2,
-        "1433901799": 4
+        "971198023": 2
     }
 }
