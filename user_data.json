@@ -1,19 +1,72 @@
 {
     "scores": {
         "971198023": {
-            "yellow": 1,
-            "green": 0,
-            "cyan": 1,
+            "yellow": 17,
+            "green": 17,
+            "cyan": 15,
+            "red": 20,
+            "gray": 15,
+            "purple": 8,
+            "orange": 7,
+            "magenta": 21,
+            "blue": 11,
+            "pink": 13
+        },
+        "8083841754": {
+            "yellow": 3,
+            "green": 3,
+            "cyan": 2,
             "red": 1,
-            "gray": 1,
-            "purple": 0,
-            "orange": 0,
-            "magenta": 1,
+            "gray": 3,
+            "purple": 2,
+            "orange": 2,
+            "magenta": 2,
             "blue": 0,
             "pink": 1
+        },
+        "918602573": {
+            "yellow": 17,
+            "green": 17,
+            "cyan": 15,
+            "red": 20,
+            "gray": 15,
+            "purple": 8,
+            "orange": 7,
+            "magenta": 21,
+            "blue": 11,
+            "pink": 11
+        },
+        "1433901799": {
+            "yellow": 0,
+            "green": 0,
+            "cyan": 0,
+            "red": 0,
+            "gray": 0,
+            "purple": 0,
+            "orange": 0,
+            "magenta": 0,
+            "blue": 0,
+            "pink": 0
+        },
+        "1433901799": {
+            "yellow": 3,
+            "green": 1,
+            "cyan": 1,
+            "red": 1,
+            "gray": 3,
+            "purple": 1,
+            "orange": 1,
+            "magenta": 1,
+            "blue": 0,
+            "pink": 2
         }
     },
     "progress": {
-        "971198023": 2
+        "971198023": 51,
+        "8083841754": 6,
+        "1130270112": 0,
+        "918602573": 49,
+        "1433901799": 0,
+        "1433901799": 5
     }
 }
