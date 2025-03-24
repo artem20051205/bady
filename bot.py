@@ -121,7 +121,7 @@ async def reset_and_start_test(user_id, message):
     user_progress[user_id] = 0
     await save_user_data()
 
-    await message.answer("Починаємо тест!")
+    await message.answer("БУДЬТЕ дуже чесними!")
     await send_next_question(user_id, message)
 
 last_message_was_question = defaultdict(bool)
