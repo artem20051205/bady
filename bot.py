@@ -56,8 +56,12 @@ async def save_user_data() -> None:
 async def init_user_data() -> None:
     global user_scores, user_progress
     data = await load_user_data()
-    user_scores.update(data.get('scores', {}))
-    user_progress.update(data.get('progress', {}))
+
+    if data.get('scores'):
+        user_scores.update(data['scores'])
+    if data.get('progress'):
+        user_progress.update(data['progress'])
+
 # ==============================
 # Функции работы с подпиской
 # ==============================
@@ -146,28 +150,35 @@ async def send_next_question(user_id: int, message: types.Message) -> None:
         else:
             await message.answer(question_text, reply_markup=buttons)
     except Exception as e:
-        logging.error(f"Помилка при відправці/редагуванні питання: {e}")
+        logging.error(f"Помилка при відправні/редагуванні питання: {e}")
         await message.answer(question_text, reply_markup=buttons)
     last_message_was_question[user_id] = True
 
 
 async def reset_and_start_test(user_id: int, message: types.Message) -> None:
+    if user_id in user_scores:
+        del user_scores[user_id]
+    if user_id in user_progress:
+        del user_progress[user_id]
+
     user_scores[user_id] = {color: 0 for color in list(color_dict.values())[0]}
     user_progress[user_id] = 0
     await save_user_data()
-    await message.answer("Будь чесними із собою, коли відповідаєте.")
+    await message.answer("Будьте чесними з собою, коли відповідаєте.")
     await send_next_question(user_id, message)
 
 
 @router.callback_query(lambda c: c.data == "start_test")
 async def start_test(callback: types.CallbackQuery) -> None:
     user_id = callback.from_user.id
-    if user_progress[user_id] > 0:
+
+    if user_id in user_progress and user_progress[user_id] > 0:
         await callback.message.answer(
             "🔄 Ви вже проходили тест. Хочете почати заново?",
             reply_markup=get_restart_buttons()
         )
         return
+
     await reset_and_start_test(user_id, callback.message)
 
 @router.callback_query(lambda c: c.data == "restart_test")
@@ -236,7 +247,7 @@ async def send_results(user_id: int, message: types.Message) -> None:
         )
         await message.edit_text("✅ Ваші результати надіслано!", reply_markup=None)
     except Exception as e:
-        logging.error(f"Помилка при відправці фото або редагуванні повідомлення: {e}")
+        logging.error(f"Помилка при відправі фото або редагуванні повідомлення: {e}")
         await message.answer(result_text.strip(), parse_mode="Markdown")
 
 def evaluate_color_score(color: str, score: int) -> str:

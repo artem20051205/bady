@@ -1,32 +1,19 @@
 {
     "scores": {
         "971198023": {
-            "yellow": 3,
-            "green": 1,
-            "cyan": 1,
-            "red": 1,
-            "gray": 3,
-            "purple": 1,
-            "orange": 1,
-            "magenta": 1,
-            "blue": 0,
-            "pink": 1
-        },
-        "971198023": {
-            "yellow": 13,
-            "green": 12,
-            "cyan": 14,
-            "red": 17,
-            "gray": 12,
+            "yellow": 17,
+            "green": 17,
+            "cyan": 16,
+            "red": 21,
+            "gray": 14,
             "purple": 7,
-            "orange": 6,
-            "magenta": 19,
-            "blue": 9,
+            "orange": 7,
+            "magenta": 21,
+            "blue": 12,
             "pink": 10
         }
     },
     "progress": {
-        "971198023": 4,
         "971198023": 49
     }
 }
