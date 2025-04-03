@@ -1,110 +1,117 @@
 import asyncio
-import logging
 import json
 from aiogram import Bot, Dispatcher, types, F
 from aiogram.types import Message
-from datetime import datetime, time, timedelta
+from aiogram.exceptions import TelegramAPIError
+from datetime import datetime, time
 from config import API_TOKEN
+from color_data import MENUS
 
-logging.basicConfig(level=logging.INFO)
-
-bot = Bot(token=API_TOKEN)
 dp = Dispatcher()
+bot = Bot(token=API_TOKEN)
 
 COMBINED_DATA_FILE = "data.json"
 
-MENU_TEXT = "🍽️ Меню на день:\n1. Завтрак: Овсянка с фруктами\n2. Обед: Курица с рисом\n3. Ужин: Салат с тунцом"
-WEIGHT_QUESTION = "⚖️ Какой у вас был вес сегодня вечером? Напиши число в кг."
+# Настройки времени
+MENU_TIME = time(8, 49)  # 08:31
+WEIGHT_TIME = time(8, 52)  # 08:38
 
-# Функции для работы с данными
-def load_data():
+INSTRUCTIONS = "📋 Инструкции: Бот будет отправлять меню на следующий день утром и запрашивать вес вечером."
+WEIGHT_QUESTION = "⚖️ Какой у вас вес? Напишите число в кг."
+
+# Используем lock для синхронизации работы с JSON файлом
+json_lock = asyncio.Lock()
+
+async def load_data():
+    async with json_lock:
+        try:
+            with open(COMBINED_DATA_FILE, "r") as f:
+                return json.load(f)
+        except (FileNotFoundError, json.JSONDecodeError) as e:
+            return {}
+
+async def save_data(data):
+    async with json_lock:
+        try:
+            with open(COMBINED_DATA_FILE, "w") as f:
+                json.dump(data, f, indent=4)
+        except Exception as e:
+            pass
+
+async def send_message(user_id, text):
     try:
-        with open(COMBINED_DATA_FILE, "r") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        return {}
+        await bot.send_message(user_id, text)
+    except TelegramAPIError as e:
+        await bot.send_message(user_id, "❌ Произошла ошибка при отправке сообщения, попробуйте позже.")
 
-def save_data(data):
-    try:
-        with open(COMBINED_DATA_FILE, "w") as f:
-            json.dump(data, f, indent=4)
-    except Exception as e:
-        logging.error(f"Ошибка сохранения данных: {e}")
-
-@dp.message(F.text == "/start")
 async def start_handler(message: Message):
-    data = load_data()
     user_id = str(message.chat.id)
+    data = await load_data()
 
     if user_id not in data:
-        data[user_id] = {"name": f"User {user_id}", "weights": {}}
-        save_data(data)
-        await message.answer("🤖 Бот запущен! Теперь ты будешь получать ежедневное меню и вечерний запрос веса.")
-    else:
-        await message.answer("Ты уже зарегистрирован!")
+        data[user_id] = {"name": f"User {user_id}", "weights": {}, "day": 1, "finished": False}
+        await save_data(data)
+        await send_message(user_id, INSTRUCTIONS)
+    elif data[user_id].get("finished"):
+        await send_message(user_id, "✅ Ты уже завершил участие!")
+        return
 
-@dp.message(F.text == "/weight")
-async def weight_history_handler(message: Message):
-    user_id = str(message.chat.id)
-    data = load_data()
+    await ask_weight(user_id)
+    await send_menu(user_id, 1)
 
-    if user_id in data and data[user_id]["weights"]:
-        history = "\n".join([f"{date}: {weight} кг" for date, weight in data[user_id]["weights"].items()])
-        await message.answer(f"📊 История твоего веса:\n{history}")
-    else:
-        await message.answer("❌ История веса пуста!")
+async def send_menu(user_id, day):
+    if day in MENUS:
+        await send_message(user_id, MENUS[day])
 
-async def send_menu():
-    data = load_data()
-    for user_id in data:
-        try:
-            await bot.send_message(user_id, MENU_TEXT)
-        except Exception as e:
-            logging.warning(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
+async def ask_weight(user_id):
+    await send_message(user_id, WEIGHT_QUESTION)
 
-async def ask_weight():
-    data = load_data()
-    for user_id in data:
-        try:
-            await bot.send_message(user_id, WEIGHT_QUESTION)
-        except Exception as e:
-            logging.warning(f"Не удалось отправить сообщение пользователю {user_id}: {e}")
-
-@dp.message(F.text.regexp(r"^\d+(\.\d+)?$"))
 async def weight_handler(message: Message):
     user_id = str(message.chat.id)
     weight = message.text
     today = datetime.now().strftime("%Y-%m-%d")
 
-    data = load_data()
-    if user_id not in data:
-        data[user_id] = {"name": f"User {user_id}", "weights": {}}
-    
-    data[user_id]["weights"][today] = weight
-    save_data(data)
+    data = await load_data()
+    if user_id not in data or data[user_id].get("finished"):
+        return
 
-    await message.answer(f"✅ Вес {weight} кг сохранен на {today}!")
+    if today in data[user_id]["weights"]:
+        await send_message(user_id, "⚠️ Вес уже записан сегодня!")
+        return
+
+    data[user_id]["weights"][today] = weight
+    await save_data(data)
+    await send_message(user_id, f"✅ Вес {weight} кг сохранен на {today}!")
+
+    if data[user_id]["day"] < 3:
+        data[user_id]["day"] += 1
+        await save_data(data)
+    else:
+        first_day_weight = float(list(data[user_id]["weights"].values())[0])
+        last_day_weight = float(weight)
+        weight_diff = last_day_weight - first_day_weight
+        await send_message(user_id, f"📉 Разница в весе с первым днем: {weight_diff:.1f} кг. Спасибо за участие!")
+        data[user_id]["finished"] = True
+        await save_data(data)
 
 async def scheduler():
     while True:
-        now = datetime.now()
-        next_run = None
-        
-        if now.time() < time(8, 0):
-            next_run = now.replace(hour=8, minute=0, second=0, microsecond=0)
-        elif now.time() < time(20, 0):
-            next_run = now.replace(hour=20, minute=0, second=0, microsecond=0)
-        else:
-            next_run = (now + timedelta(days=1)).replace(hour=8, minute=0, second=0, microsecond=0)
-
-        delay = (next_run - now).total_seconds()
-        logging.info(f"Следующее событие запланировано на {next_run} через {delay} секунд.")
-        await asyncio.sleep(delay)
-
-        if next_run.hour == 8:
-            await send_menu()
-        elif next_run.hour == 20:
-            await ask_weight()
+        now = datetime.now().time()
+        data = await load_data()
+        for user_id in list(data.keys()):
+            if data[user_id].get("finished"):
+                continue
+            user_day = data[user_id].get("day", 1)
+            last_weight_date = max(data[user_id]["weights"].keys(), default="")
+            today = datetime.now().strftime("%Y-%m-%d")
+            if last_weight_date != today and user_day > 1:
+                await send_message(user_id, "⚠️ Напоминаем, что нужно ввести вес, прежде чем продолжать!")
+                continue
+            if now.hour == MENU_TIME.hour and now.minute == MENU_TIME.minute and user_day <= 3:
+                await send_menu(user_id, user_day)
+            if now.hour == WEIGHT_TIME.hour and now.minute == WEIGHT_TIME.minute:
+                await ask_weight(user_id)
+        await asyncio.sleep(30)
 
 async def main():
     asyncio.create_task(scheduler())
