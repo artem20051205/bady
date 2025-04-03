@@ -1,7 +1,66 @@
 {
-    "971198023": {
-        "name": "User 971198023",
-        "weights": {},
-        "day": 0
+    "test_scores": {
+        "971198023": {
+            "yellow": 4,
+            "green": 3,
+            "cyan": 4,
+            "red": 2,
+            "gray": 4,
+            "purple": 2,
+            "orange": 1,
+            "magenta": 1,
+            "blue": 1,
+            "pink": 2
+        },
+        "1433901799": {
+            "yellow": 1,
+            "green": 0,
+            "cyan": 1,
+            "red": 1,
+            "gray": 2,
+            "purple": 0,
+            "orange": 0,
+            "magenta": 1,
+            "blue": 0,
+            "pink": 1
+        }
+    },
+    "test_progress": {
+        "971198023": 49,
+        "1433901799": 2
+    },
+    "weight_tracker": {
+        "971198023": {
+            "weights": {
+                "2025-04-03": 44.0
+            },
+            "day": 1,
+            "finished": false,
+            "asked_today": true,
+            "menu_sent_today": true
+        },
+        "1433901799": {
+            "weights": {},
+            "day": 2,
+            "finished": false,
+            "asked_today": true,
+            "menu_sent_today": true
+        },
+        "5775341570": {
+            "weights": {
+                "2025-04-03": 56.4
+            },
+            "day": 1,
+            "finished": false,
+            "asked_today": true,
+            "menu_sent_today": true
+        },
+        "8083841754": {
+            "weights": {},
+            "day": 1,
+            "finished": false,
+            "asked_today": true,
+            "menu_sent_today": true
+        }
     }
 }
