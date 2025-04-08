@@ -1,0 +1,29 @@
+{
+    "full_name": "fhn",
+    "age": 12,
+    "height_weight": "112",
+    "diagnoses": "12",
+    "medications": "21",
+    "weight_data": {
+        "weights": {
+            "2025-04-08": 80.0
+        },
+        "day": 1,
+        "finished": false,
+        "asked_today": true,
+        "menu_sent_today": true
+    },
+    "test_scores": {
+        "yellow": 0,
+        "green": 0,
+        "cyan": 0,
+        "red": 0,
+        "gray": 0,
+        "purple": 0,
+        "orange": 0,
+        "magenta": 0,
+        "blue": 0,
+        "pink": 0
+    },
+    "test_progress": 0
+}

@@ -11,7 +11,7 @@ from aiogram import Bot, Dispatcher, types, Router, F
 from aiogram.enums import ChatMemberStatus
 from aiogram.filters import CommandStart, Command
 from aiogram.types import FSInputFile, InlineKeyboardMarkup, InlineKeyboardButton, Message
-from aiogram.exceptions import TelegramAPIError, TelegramBadRequest # Додано TelegramBadRequest для обробки помилок редагування
+from aiogram.exceptions import TelegramAPIError, TelegramBadRequest
 from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import config
@@ -21,10 +21,14 @@ from color_data import (
 
 API_TOKEN: str = config.API_TOKEN
 CHANNEL_ID: int = config.CHANNEL_ID
-DATA_FILE: str = "data.json"
 MENU_TIME = time(8, 0)
 WEIGHT_TIME = time(20, 0)
 TOTAL_WEIGHT_TRACKING_DAYS = 7
+
+USER_DATA_DIR = "user_data"
+
+# Ensure the directory for user data exists
+os.makedirs(USER_DATA_DIR, exist_ok=True)
 
 WEIGHT_TRACKING_INSTRUCTIONS = (
     "📋 Програму 'Меню та Вага' запущено!\n\n"
@@ -38,10 +42,11 @@ WEIGHT_REMINDER = "⏰ Нагадую, будь ласка, введіть ва�
 WELCOME_IMAGE_PATH = "img/1.png"
 RESULTS_IMAGE_PATH = "img/1.png"
 
+SUPPORT_USERNAME = "@MRartemkaa"  # Replace with the actual username for support
+
 bot: Bot = Bot(token=API_TOKEN)
 dp: Dispatcher = Dispatcher()
 router: Router = Router()
-data_lock = asyncio.Lock()
 
 user_test_scores: Dict[int, Dict[str, int]] = defaultdict(lambda: {color: 0 for color in list(color_dict.values())[0]})
 user_test_progress: Dict[int, int] = defaultdict(int)
@@ -50,46 +55,39 @@ user_last_question_msg_id: Dict[int, int] = defaultdict(int)
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(levelname)s - %(message)s")
 
-async def load_user_data() -> None:
-    global user_test_scores, user_test_progress, user_weight_data
-    async with data_lock:
-        if os.path.exists(DATA_FILE):
-            try:
-                async with aiofiles.open(DATA_FILE, 'r', encoding='utf-8') as f:
-                    content = await f.read()
-                    if not content:
-                        logging.info(f"Файл даних {DATA_FILE} порожній. Ініціалізація...")
-                        return
-                    all_data = json.loads(content)
-                # Завантаження даних тесту
-                scores_from_file = all_data.get('test_scores', {})
-                progress_from_file = all_data.get('test_progress', {})
-                # Завантаження даних ваги/меню
-                weight_data_from_file = all_data.get('weight_tracker', {})
-                # Перетворення ключів user_id з рядків (JSON) на int
-                user_test_scores.update({int(k): v for k, v in scores_from_file.items()})
-                user_test_progress.update({int(k): v for k, v in progress_from_file.items()})
-                user_weight_data.update({int(k): v for k, v in weight_data_from_file.items()})
-                logging.info(f"Дані успішно завантажено з {DATA_FILE}")
-            except json.JSONDecodeError:
-                logging.error(f"Помилка декодування JSON з файлу {DATA_FILE}. Файл може бути пошкоджено.")
-            except Exception as e:
-                logging.error(f"Непередбачена помилка під час завантаження даних з {DATA_FILE}: {e}")
-        else:
-            logging.info(f"Файл даних {DATA_FILE} не знайдено. Буде створено при першому збереженні.")
+def save_user_to_json(user_id: int, data: dict):
+    """Save user data to a JSON file."""
+    user_file = os.path.join(USER_DATA_DIR, f"{user_id}.json")
+    try:
+        with open(user_file, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=4)
+        logging.info(f"Дані користувача {user_id} збережено у файл {user_file}")
+    except Exception as e:
+        logging.error(f"Помилка збереження даних користувача {user_id} у файл {user_file}: {e}")
 
-async def save_user_data() -> None:
-    async with data_lock:
+def load_user_from_json(user_id: int) -> dict:
+    """Load user data from a JSON file."""
+    user_file = os.path.join(USER_DATA_DIR, f"{user_id}.json")
+    if os.path.exists(user_file):
         try:
-            data_to_save = {
-                'test_scores': {str(k): v for k, v in user_test_scores.items()},
-                'test_progress': {str(k): v for k, v in user_test_progress.items()},
-                'weight_tracker': {str(k): v for k, v in user_weight_data.items()}
-            }
-            async with aiofiles.open(DATA_FILE, 'w', encoding='utf-8') as f:
-                await f.write(json.dumps(data_to_save, ensure_ascii=False, indent=4))
+            with open(user_file, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            logging.info(f"Дані користувача {user_id} завантажено з файлу {user_file}")
+            return data
         except Exception as e:
-            logging.error(f"Помилка під час збереження даних у {DATA_FILE}: {e}")
+            logging.error(f"Помилка завантаження даних користувача {user_id} з файлу {user_file}: {e}")
+    return {}
+
+async def save_user_data(user_id: int, key: str, value: Any) -> None:
+    """Save specific user data to their JSON file."""
+    user_data = load_user_from_json(user_id)
+    user_data[key] = value
+    save_user_to_json(user_id, user_data)
+
+async def load_user_data(user_id: int, key: str) -> Any:
+    """Load specific user data from their JSON file."""
+    user_data = load_user_from_json(user_id)
+    return user_data.get(key)
 
 async def send_safe_message(user_id: int, text: str, **kwargs):
     try:
@@ -122,7 +120,7 @@ def get_answer_buttons(qid: int) -> InlineKeyboardMarkup:
     ])
 
 def get_subscribe_button() -> InlineKeyboardMarkup:
-    channel_link = getattr(config, 'CHANNEL_LINK', "https://t.me/your_channel_username")
+    channel_link = getattr(config, 'CHANNEL_LINK', "https://t.me/tteessttooss")
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [InlineKeyboardButton(text="🔔 Підписатися", url=channel_link)],
@@ -140,18 +138,21 @@ def get_main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
         inline_keyboard=[
             [
-                InlineKeyboardButton(text="⚙️ Опція 1 (в розробці)", callback_data="dev_1"),
-                InlineKeyboardButton(text="🔧 Опція 2 (в розробці)", callback_data="dev_2")
-            ],
-            [
-                InlineKeyboardButton(text="📜 Опція 3 (в розробці)", callback_data="dev_3"),
-                InlineKeyboardButton(text="📖 Меню", callback_data="start_weight_tracking")
-            ],
-            [
+                InlineKeyboardButton(text="📖 Меню", callback_data="start_weight"),
                 InlineKeyboardButton(text="📝 Пройти тест", callback_data="start_test")
+            ],
+            [
+                InlineKeyboardButton(text="🎧 Зв'язок з нами", callback_data="call_center")
             ]
         ]
     )
+
+@router.callback_query(F.data == "call_center")
+async def handle_call_center_callback(callback: types.CallbackQuery) -> None:
+    """Handle the 'Contact Us' button."""
+    await callback.message.answer(f"Для зв'язку з підтримкою напишіть: {SUPPORT_USERNAME}")
+    await callback.answer()
+
 @router.message(CommandStart())
 async def send_welcome(message: types.Message) -> None:
     user_id = message.from_user.id
@@ -183,6 +184,18 @@ class UserData(StatesGroup):
 async def handle_start_test_callback(callback: types.CallbackQuery, state: FSMContext) -> None:
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
+
+    # Check if user data already exists
+    existing_data = load_user_from_json(user_id)
+    if existing_data:
+        logging.info(f"Користувач {user_id} вже вводив свої дані. Пропускаємо введення.")
+        await state.update_data(**existing_data)
+        await callback.message.answer("Ваші дані вже збережено. Починаємо тест...")
+        await reset_and_start_test(user_id, chat_id)
+        await callback.answer()
+        return
+
+    # If no existing data, proceed with data collection
     await state.set_state(UserData.full_name)
     await callback.message.answer("Будь ласка, введіть ваше ПІБ:")
     await callback.answer()
@@ -217,11 +230,14 @@ async def process_diagnoses(message: Message, state: FSMContext) -> None:
 async def process_medications(message: Message, state: FSMContext) -> None:
     await state.update_data(medications=message.text)
     user_data = await state.get_data()
+    user_id = message.from_user.id
+
+    # Save user data to a JSON file
+    save_user_to_json(user_id, user_data)
+
     await state.clear()
-
-
     await message.answer("Дякую! Ваші дані збережено. Починаємо тест...")
-    await reset_and_start_test(message.from_user.id, message.chat.id)
+    await reset_and_start_test(user_id, message.chat.id)
 
 @router.message(Command("mainmenu"))
 async def handle_mainmenu_command(message: types.Message) -> None:
@@ -232,7 +248,6 @@ async def handle_mainmenu_command(message: types.Message) -> None:
     markup = get_main_menu()
 
     try:
-        # Try to send the photo
         photo = FSInputFile(WELCOME_IMAGE_PATH)
         await message.answer_photo(
             photo=photo,
@@ -310,7 +325,9 @@ async def reset_and_start_test(user_id: int, chat_id: int) -> None:
     user_test_progress[user_id] = 0
     user_last_question_msg_id[user_id] = 0
 
-    await save_user_data()
+    await save_user_data(user_id, "test_scores", user_test_scores[user_id])
+    await save_user_data(user_id, "test_progress", user_test_progress[user_id])
+
     await send_safe_message(chat_id, "📝 Тест розпочато! Будь ласка, відповідайте чесно.")
     await send_next_question(user_id, chat_id)
 
@@ -403,7 +420,9 @@ async def handle_answer_callback(callback: types.CallbackQuery) -> None:
             current_scores[color] = current_scores.get(color, 0) + value
 
     user_test_progress[user_id] = current_progress + 1
-    await save_user_data()
+
+    await save_user_data(user_id, "test_scores", user_test_scores[user_id])
+    await save_user_data(user_id, "test_progress", user_test_progress[user_id])
 
     await send_next_question(user_id, chat_id)
     await callback.answer()
@@ -471,8 +490,8 @@ async def send_results(user_id: int, chat_id: int) -> None:
 
     await send_safe_message(chat_id, "Оберіть наступну дію:", reply_markup=get_main_menu())
 
-@router.callback_query(F.data == "start_weight_tracking")
-async def handle_start_weight_tracking_callback(callback: types.CallbackQuery) -> None:
+@router.callback_query(F.data == "start_weight")
+async def handle_start_weight_callback(callback: types.CallbackQuery) -> None:
     user_id = callback.from_user.id
     chat_id = callback.message.chat.id
     global user_weight_data
@@ -492,7 +511,7 @@ async def handle_start_weight_tracking_callback(callback: types.CallbackQuery) -
 
     logging.info(f"Користувач {user_id} запускає програму 'Меню та Вага' ({TOTAL_WEIGHT_TRACKING_DAYS} днів).")
     user_weight_data[user_id] = {"weights": {}, "day": 1, "finished": False, "asked_today": False, "menu_sent_today": False}
-    await save_user_data()
+    await save_user_data(user_id, "weight_data", user_weight_data[user_id])
 
     try:
         if callback.message.photo:
@@ -509,7 +528,7 @@ async def handle_start_weight_tracking_callback(callback: types.CallbackQuery) -
     user_weight_data[user_id]['menu_sent_today'] = True
     await ask_weight(user_id)
     user_weight_data[user_id]['asked_today'] = True
-    await save_user_data()
+    await save_user_data(user_id, "weight_data", user_weight_data[user_id])
     await callback.answer()
 
 async def send_menu(user_id: int, day: int) -> None:
@@ -537,38 +556,52 @@ async def handle_weight_input(message: types.Message):
     user_id = message.from_user.id
     chat_id = message.chat.id
     global user_weight_data
+
     if user_id not in user_weight_data or not user_weight_data[user_id] or user_weight_data[user_id].get("finished"):
         return
+
     try:
         weight_str = message.text.replace(',', '.')
         weight = float(weight_str)
-        if not (20 < weight < 300): raise ValueError("Нереальна вага")
+        if not (20 < weight < 300):
+            raise ValueError("Нереальна вага")
     except ValueError:
         await message.reply("❌ Будь ласка, введіть вашу вагу коректним числом (наприклад, 75.5 або 75,5).")
         return
+
     today_str = datetime.now().strftime("%Y-%m-%d")
     user_data = user_weight_data[user_id]
+
     if today_str in user_data.get("weights", {}):
         await message.reply(f"⚠️ Вага на сьогодні ({today_str}) вже записана: {user_data['weights'][today_str]:.1f} кг.")
         return
 
+    # Save the weight for today
     user_data.setdefault("weights", {})[today_str] = weight
+    user_data["asked_today"] = True  # Mark as asked for today
     current_day = user_data.get("day", 1)
+
     logging.info(f"Користувач {user_id} ввів вагу {weight:.1f} кг за {today_str} (День {current_day}/{TOTAL_WEIGHT_TRACKING_DAYS})")
     await message.reply(f"✅ Вага {weight:.1f} кг збережена (День {current_day}/{TOTAL_WEIGHT_TRACKING_DAYS}). Дякую!")
 
+    # Check if the program is finished
     if current_day >= TOTAL_WEIGHT_TRACKING_DAYS:
         user_data["finished"] = True
         logging.info(f"Користувач {user_id} завершив програму 'Меню та Вага' ({TOTAL_WEIGHT_TRACKING_DAYS} днів).")
         all_weights = list(user_data["weights"].values())
         if len(all_weights) >= 1:
-            first_day_weight = all_weights[0]; last_day_weight = weight
-            weight_diff = last_day_weight - first_day_weight; sign = "+" if weight_diff >= 0 else ""
+            first_day_weight = all_weights[0]
+            last_day_weight = weight
+            weight_diff = last_day_weight - first_day_weight
+            sign = "+" if weight_diff >= 0 else ""
             num_days_participated = len(all_weights)
             await send_safe_message(chat_id, f"🎉 Програму 'Меню та Вага' завершено!\n📉 Ваш результат за {num_days_participated} дн.: {sign}{weight_diff:.1f} кг.\nДякуємо за участь!")
             await send_safe_message(chat_id, "Оберіть наступну дію:", reply_markup=get_main_menu())
-        else: await send_safe_message(chat_id, "🎉 Програму 'Меню та Вага' завершено! Дякуємо за участь!")
-    await save_user_data()
+        else:
+            await send_safe_message(chat_id, "🎉 Програму 'Меню та Вага' завершено! Дякуємо за участь!")
+
+    # Save updated user data
+    await save_user_data(user_id, "weight_data", user_data)
 
 async def scheduler():
     logging.info("Планувальник запущено.")
@@ -586,7 +619,7 @@ async def scheduler():
                 if user_data.get('menu_sent_today') or user_data.get('asked_today'):
                      logging.debug(f"Скидання щоденних прапорців для {user_id}")
                      user_data['menu_sent_today'] = False; user_data['asked_today'] = False
-                     await save_user_data()
+                     await save_user_data(user_id, "weight_data", user_data)
 
             if current_time.hour == MENU_TIME.hour and current_time.minute == MENU_TIME.minute:
                 if not user_data.get('menu_sent_today'):
@@ -597,7 +630,7 @@ async def scheduler():
                         if user_day < TOTAL_WEIGHT_TRACKING_DAYS:
                              user_data['day'] += 1
                              logging.info(f"Користувач {user_id} переведений на День {user_data['day']}")
-                        await save_user_data()
+                        await save_user_data(user_id, "weight_data", user_data)
 
             if current_time.hour == WEIGHT_TIME.hour and current_time.minute == WEIGHT_TIME.minute:
 
@@ -605,12 +638,11 @@ async def scheduler():
                      if not user_data.get('asked_today'):
                         await ask_weight(user_id)
                         user_data['asked_today'] = True
-                        await save_user_data()
+                        await save_user_data(user_id, "weight_data", user_data)
 
         await asyncio.sleep(60)
 
 async def main() -> None:
-    await load_user_data()
     dp.include_router(router)
     asyncio.create_task(scheduler())
     await bot.delete_webhook(drop_pending_updates=True)
