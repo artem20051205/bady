@@ -14,16 +14,16 @@
         "menu_sent_today": true
     },
     "test_scores": {
-        "yellow": 0,
-        "green": 0,
-        "cyan": 0,
-        "red": 0,
-        "gray": 0,
-        "purple": 0,
-        "orange": 0,
-        "magenta": 0,
-        "blue": 0,
-        "pink": 0
+        "yellow": 7,
+        "green": 5,
+        "cyan": 6,
+        "red": 8,
+        "gray": 8,
+        "purple": 4,
+        "orange": 4,
+        "magenta": 8,
+        "blue": 1,
+        "pink": 7
     },
-    "test_progress": 0
+    "test_progress": 19
 }

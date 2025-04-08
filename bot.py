@@ -18,6 +18,7 @@ import config
 from color_data import (
     color_dict, evaluation_criteria, color_to_system, evaluation_icons, MENUS
 )
+from test_handlers import router as test_router
 
 API_TOKEN: str = config.API_TOKEN
 CHANNEL_ID: int = config.CHANNEL_ID
@@ -48,8 +49,6 @@ bot: Bot = Bot(token=API_TOKEN)
 dp: Dispatcher = Dispatcher()
 router: Router = Router()
 
-user_test_scores: Dict[int, Dict[str, int]] = defaultdict(lambda: {color: 0 for color in list(color_dict.values())[0]})
-user_test_progress: Dict[int, int] = defaultdict(int)
 user_weight_data: Dict[int, Dict[str, Any]] = defaultdict(dict)
 user_last_question_msg_id: Dict[int, int] = defaultdict(int)
 
@@ -112,13 +111,6 @@ def create_buttons(buttons: list[tuple[str, str]]) -> InlineKeyboardMarkup:
         inline_keyboard=[[InlineKeyboardButton(text=text, callback_data=callback)] for text, callback in buttons]
     )
 
-def get_answer_buttons(qid: int) -> InlineKeyboardMarkup:
-    return create_buttons([
-        ("✅ Так", f"yes_{qid}"),
-        ("❌ Ні", f"no_{qid}"),
-        ("⏭ Пропустити", f"skip_{qid}")
-    ])
-
 def get_subscribe_button() -> InlineKeyboardMarkup:
     channel_link = getattr(config, 'CHANNEL_LINK', "https://t.me/tteessttooss")
     return InlineKeyboardMarkup(
@@ -127,12 +119,6 @@ def get_subscribe_button() -> InlineKeyboardMarkup:
             [InlineKeyboardButton(text="✅ Перевірити підписку", callback_data="check_subscription")]
         ]
     )
-
-def get_restart_buttons() -> InlineKeyboardMarkup:
-    return create_buttons([
-        ("🔄 Так, почати заново", "restart_test"),
-        ("❌ Ні", "cancel_restart")
-    ])
 
 def get_main_menu() -> InlineKeyboardMarkup:
     return InlineKeyboardMarkup(
@@ -173,71 +159,6 @@ async def send_welcome(message: types.Message) -> None:
             caption,
             reply_markup=get_main_menu()
         )
-class UserData(StatesGroup):
-    full_name = State()
-    age = State()
-    height_weight = State()
-    diagnoses = State()
-    medications = State()
-
-@router.callback_query(F.data == "start_test")
-async def handle_start_test_callback(callback: types.CallbackQuery, state: FSMContext) -> None:
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
-
-    # Check if user data already exists
-    existing_data = load_user_from_json(user_id)
-    if existing_data:
-        logging.info(f"Користувач {user_id} вже вводив свої дані. Пропускаємо введення.")
-        await state.update_data(**existing_data)
-        await callback.message.answer("Ваші дані вже збережено. Починаємо тест...")
-        await reset_and_start_test(user_id, chat_id)
-        await callback.answer()
-        return
-
-    # If no existing data, proceed with data collection
-    await state.set_state(UserData.full_name)
-    await callback.message.answer("Будь ласка, введіть ваше ПІБ:")
-    await callback.answer()
-
-@router.message(UserData.full_name)
-async def process_full_name(message: Message, state: FSMContext) -> None:
-    await state.update_data(full_name=message.text)
-    await state.set_state(UserData.age)
-    await message.answer("Введіть ваш вік:")
-
-@router.message(UserData.age)
-async def process_age(message: Message, state: FSMContext) -> None:
-    if not message.text.isdigit():
-        return await message.answer("Вік має бути числом. Введіть ще раз:")
-    await state.update_data(age=int(message.text))
-    await state.set_state(UserData.height_weight)
-    await message.answer("Введіть ваш зріст/вагу (наприклад, 175/70):")
-
-@router.message(UserData.height_weight)
-async def process_height_weight(message: Message, state: FSMContext) -> None:
-    await state.update_data(height_weight=message.text)
-    await state.set_state(UserData.diagnoses)
-    await message.answer("Опишіть ваші діагнози та хронічні захворювання:")
-
-@router.message(UserData.diagnoses)
-async def process_diagnoses(message: Message, state: FSMContext) -> None:
-    await state.update_data(diagnoses=message.text)
-    await state.set_state(UserData.medications)
-    await message.answer("Ви приймаєте зараз ліки? (так/ні)")
-
-@router.message(UserData.medications)
-async def process_medications(message: Message, state: FSMContext) -> None:
-    await state.update_data(medications=message.text)
-    user_data = await state.get_data()
-    user_id = message.from_user.id
-
-    # Save user data to a JSON file
-    save_user_to_json(user_id, user_data)
-
-    await state.clear()
-    await message.answer("Дякую! Ваші дані збережено. Починаємо тест...")
-    await reset_and_start_test(user_id, message.chat.id)
 
 @router.message(Command("mainmenu"))
 async def handle_mainmenu_command(message: types.Message) -> None:
@@ -261,171 +182,6 @@ async def handle_mainmenu_command(message: types.Message) -> None:
             text,
             reply_markup=markup
         )
-async def send_next_question(user_id: int, chat_id: int) -> None:
-    global user_last_question_msg_id
-    qid = user_test_progress.get(user_id, 0)
-
-    if qid >= len(color_dict):
-        last_msg_id = user_last_question_msg_id.get(user_id, 0)
-        if last_msg_id:
-            try:
-                await bot.delete_message(chat_id, last_msg_id)
-            except (TelegramAPIError, TelegramBadRequest) as e:
-                 logging.warning(f"Не вдалося видалити останнє повідомлення з питанням {last_msg_id} для {user_id}: {e}")
-            user_last_question_msg_id[user_id] = 0
-
-        await send_results_or_subscribe_prompt(user_id, chat_id)
-        return
-
-    question_text = f"❓ Питання {qid + 1}/{len(color_dict)}: {list(color_dict.keys())[qid]}"
-    buttons = get_answer_buttons(qid)
-    last_msg_id = user_last_question_msg_id.get(user_id, 0)
-    sent_message = None
-
-    if last_msg_id:
-        try:
-            sent_message = await bot.edit_message_text(
-                text=question_text,
-                chat_id=chat_id,
-                message_id=last_msg_id,
-                reply_markup=buttons
-            )
-            logging.debug(f"Відредаговано повідомлення {last_msg_id} для питання {qid} користувача {user_id}")
-        except TelegramBadRequest as e:
-            logging.warning(f"Не вдалося відредагувати повідомлення {last_msg_id} для {user_id} (можливо, текст той самий): {e}. Спроба відправити нове.")
-            last_msg_id = 0
-            user_last_question_msg_id[user_id] = 0
-        except TelegramAPIError as e:
-            # Інша помилка API (напр., повідомлення застаріле)
-            logging.error(f"Помилка API під час редагування повідомлення {last_msg_id} для {user_id}: {e}. Спроба відправити нове.")
-            last_msg_id = 0
-            user_last_question_msg_id[user_id] = 0
-
-    if not sent_message:
-        try:
-            sent_message = await bot.send_message(
-                chat_id=chat_id,
-                text=question_text,
-                reply_markup=buttons
-            )
-            logging.debug(f"Надіслано нове повідомлення для питання {qid} користувача {user_id}")
-        except TelegramAPIError as e:
-            logging.error(f"Не вдалося надіслати нове повідомлення для питання {qid} користувача {user_id}: {e}")
-            return
-
-    if sent_message:
-        user_last_question_msg_id[user_id] = sent_message.message_id
-
-
-async def reset_and_start_test(user_id: int, chat_id: int) -> None:
-    """Скидає прогрес тесту та починає його заново."""
-    global user_test_scores, user_test_progress, user_last_question_msg_id
-
-    user_test_scores[user_id] = {color: 0 for color in list(color_dict.values())[0]}
-    user_test_progress[user_id] = 0
-    user_last_question_msg_id[user_id] = 0
-
-    await save_user_data(user_id, "test_scores", user_test_scores[user_id])
-    await save_user_data(user_id, "test_progress", user_test_progress[user_id])
-
-    await send_safe_message(chat_id, "📝 Тест розпочато! Будь ласка, відповідайте чесно.")
-    await send_next_question(user_id, chat_id)
-
-@router.callback_query(F.data == "start_test")
-async def handle_start_test_callback(callback: types.CallbackQuery) -> None:
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
-    current_progress = user_test_progress.get(user_id, 0)
-
-    if 0 < current_progress < len(color_dict):
-        text = "🔄 Ви вже почали тест. Бажаєте почати заново?"
-        markup = get_restart_buttons()
-    elif current_progress >= len(color_dict):
-        text = "🔄 Ви вже пройшли тест. Бажаєте почати заново?"
-        markup = get_restart_buttons()
-    else:
-        try:
-            await callback.message.delete()
-        except TelegramAPIError as e:
-            logging.warning(f"Не вдалося видалити повідомлення {callback.message.message_id} при старті тесту для {user_id}: {e}")
-        await reset_and_start_test(user_id, chat_id)
-        await callback.answer()
-        return
-
-    try:
-        if callback.message.photo:
-             await callback.message.edit_caption(caption=text, reply_markup=markup)
-        else:
-             await callback.message.edit_text(text, reply_markup=markup)
-    except TelegramAPIError as e:
-        logging.warning(f"Не вдалося відредагувати повідомлення для {user_id} при старті тесту: {e}. Надсилання нового.")
-        await callback.message.answer(text, reply_markup=markup)
-        try: await callback.message.delete()
-        except TelegramAPIError: pass
-
-    await callback.answer()
-
-@router.callback_query(F.data == "restart_test")
-async def handle_restart_test_callback(callback: types.CallbackQuery) -> None:
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
-    try:
-        await callback.message.delete()
-    except TelegramAPIError as e:
-        logging.warning(f"Не вдалося видалити повідомлення {callback.message.message_id} при перезапуску тесту для {user_id}: {e}")
-    await reset_and_start_test(user_id, chat_id)
-    await callback.answer("Тест перезапущено!")
-
-@router.callback_query(F.data == "cancel_restart")
-@router.callback_query(F.data == "cancel_start")
-async def handle_cancel_callback(callback: types.CallbackQuery) -> None:
-    user_id = callback.from_user.id
-    user_last_question_msg_id[user_id] = 0
-    text = "👋 Оберіть дію:"
-    markup = get_main_menu()
-    try:
-        if callback.message.photo:
-            await callback.message.edit_caption(caption=text, reply_markup=markup)
-        else:
-            await callback.message.edit_text(text, reply_markup=markup)
-    except TelegramAPIError as e:
-        logging.warning(f"Не вдалося відредагувати повідомлення для {user_id} при скасуванні: {e}. Надсилання нового.")
-        await callback.message.answer(text, reply_markup=markup)
-        try: await callback.message.delete()
-        except TelegramAPIError: pass
-    await callback.answer("Дію скасовано.")
-
-@router.callback_query(F.data.startswith(('yes_', 'no_', 'skip_')))
-async def handle_answer_callback(callback: types.CallbackQuery) -> None:
-    user_id = callback.from_user.id
-    chat_id = callback.message.chat.id
-
-    try:
-        action, qid_str = callback.data.split('_', 1)
-        qid = int(qid_str)
-    except (ValueError, IndexError):
-        logging.error(f"Невірний формат callback data: {callback.data} від користувача {user_id}")
-        await callback.answer("Сталася помилка.", show_alert=True)
-        return
-
-    current_progress = user_test_progress.get(user_id, -1)
-    if qid != current_progress:
-        await callback.answer("Ви вже відповіли на це питання.", show_alert=True)
-        return
-
-    if action == "yes":
-        question_key = list(color_dict.keys())[qid]
-        for color, value in color_dict[question_key].items():
-            current_scores = user_test_scores.setdefault(user_id, {c: 0 for c in list(color_dict.values())[0]})
-            current_scores[color] = current_scores.get(color, 0) + value
-
-    user_test_progress[user_id] = current_progress + 1
-
-    await save_user_data(user_id, "test_scores", user_test_scores[user_id])
-    await save_user_data(user_id, "test_progress", user_test_progress[user_id])
-
-    await send_next_question(user_id, chat_id)
-    await callback.answer()
 
 @router.callback_query(F.data == "check_subscription")
 async def handle_check_subscription_callback(callback: types.CallbackQuery) -> None:
@@ -440,55 +196,8 @@ async def handle_check_subscription_callback(callback: types.CallbackQuery) -> N
             "❌ Ви все ще не підписані.", reply_markup=get_subscribe_button())
     await callback.answer()
 
-async def send_results_or_subscribe_prompt(user_id: int, chat_id: int) -> None:
-
-    user_last_question_msg_id[user_id] = 0
-    if await is_user_subscribed(user_id):
-        await send_safe_message(chat_id, "🎉 Тест завершено! Готую ваші результати...")
-        await send_results(user_id, chat_id)
-    else:
-        await send_safe_message(chat_id, "🎉 Тест завершено! Щоб побачити результати, будь ласка, підпишіться:", reply_markup=get_subscribe_button())
-
-def evaluate_color_score(color: str, score: int) -> str:
-    criteria = evaluation_criteria.get(color)
-    if not criteria: return "Немає критеріїв"
-    criteria_sorted = sorted(criteria, key=lambda x: x[0])
-    for threshold, eval_str in criteria_sorted:
-        if score <= threshold:
-            return eval_str
-    if criteria_sorted: return criteria_sorted[-1][1]
-    return "Невідомо"
-
-
 async def send_results(user_id: int, chat_id: int) -> None:
-    scores = user_test_scores.get(user_id)
-    if not scores:
-        await send_safe_message(chat_id, "⚠️ Не вдалося знайти ваші результати. Спробуйте пройти тест заново.")
-        logging.warning(f"Немає даних очків для користувача {user_id} під час надсилання результатів.")
-
-        await send_safe_message(chat_id, "Оберіть дію:", reply_markup=get_main_menu())
-        return
-
-    sorted_scores = sorted(scores.items(), key=lambda item: item[1], reverse=True)
-    result_lines = []
-    for color, score in sorted_scores:
-        evaluation = evaluate_color_score(color, score)
-        icon = evaluation_icons.get(evaluation, '⚪')
-        system_name = color_to_system.get(color, color.capitalize())
-        result_lines.append(f"{icon} *{system_name}:* {evaluation}")
-
-    result_text = "📊 *Ваші результати тесту:*\n\n" + "\n".join(result_lines)
-    result_text += "\n\nДякуємо за участь!"
-
-    try:
-        photo = FSInputFile(RESULTS_IMAGE_PATH)
-        await bot.send_photo(
-            chat_id=chat_id, photo=photo, caption=result_text, parse_mode="Markdown")
-    except Exception as e:
-        logging.error(f"Не вдалося надіслати фото з результатами ({RESULTS_IMAGE_PATH}): {e}. Надсилання тексту.")
-        await send_safe_message(chat_id, result_text, parse_mode="Markdown")
-
-    await send_safe_message(chat_id, "Оберіть наступну дію:", reply_markup=get_main_menu())
+    await send_safe_message(chat_id, "Оберіть дію:", reply_markup=get_main_menu())
 
 @router.callback_query(F.data == "start_weight")
 async def handle_start_weight_callback(callback: types.CallbackQuery) -> None:
@@ -644,6 +353,7 @@ async def scheduler():
 
 async def main() -> None:
     dp.include_router(router)
+    dp.include_router(test_router)  # Include the test router
     asyncio.create_task(scheduler())
     await bot.delete_webhook(drop_pending_updates=True)
     logging.info("Запуск бота в режимі опитування (polling)...")
