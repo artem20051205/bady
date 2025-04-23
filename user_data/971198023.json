@@ -1,29 +1,10 @@
 {
-    "full_name": "fhn",
-    "age": 12,
-    "height_weight": "112",
-    "diagnoses": "12",
-    "medications": "21",
-    "weight_data": {
-        "weights": {
-            "2025-04-08": 80.0
-        },
-        "day": 1,
-        "finished": false,
-        "asked_today": true,
-        "menu_sent_today": true
+    "weights": {
+        "2025-04-23": 30.0
     },
-    "test_scores": {
-        "yellow": 7,
-        "green": 5,
-        "cyan": 6,
-        "red": 8,
-        "gray": 8,
-        "purple": 4,
-        "orange": 4,
-        "magenta": 8,
-        "blue": 1,
-        "pink": 7
-    },
-    "test_progress": 19
+    "day": 1,
+    "finished": false,
+    "asked_today": true,
+    "menu_sent_today": true,
+    "last_entry_date": "2025-04-23"
 }
