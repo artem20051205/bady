@@ -1,10 +1,23 @@
 {
-    "weights": {
-        "2025-04-23": 30.0
-    },
+    "full_name": "Серый",
+    "weights": {},
     "day": 1,
     "finished": false,
     "asked_today": true,
     "menu_sent_today": true,
-    "last_entry_date": "2025-04-23"
+    "last_entry_date": null,
+    "test_scores": {
+        "yellow": 1,
+        "green": 0,
+        "cyan": 1,
+        "red": 1,
+        "gray": 1,
+        "purple": 0,
+        "orange": 0,
+        "magenta": 1,
+        "blue": 0,
+        "pink": 1
+    },
+    "test_progress": 2,
+    "last_question_msg_id": 2396
 }

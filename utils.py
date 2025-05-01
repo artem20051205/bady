@@ -13,8 +13,11 @@ def save_user_to_json(user_id: int, data: dict):
     """Save user data to a JSON file."""
     user_file = os.path.join(USER_DATA_DIR, f"{user_id}.json")
     try:
+        # Объединяем данные, если файл уже существует
+        existing_data = load_user_from_json(user_id)
+        existing_data.update(data)
         with open(user_file, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
+            json.dump(existing_data, f, ensure_ascii=False, indent=4)
         logging.info(f"Дані користувача {user_id} збережено у файл {user_file}")
     except Exception as e:
         logging.error(f"Помилка збереження даних користувача {user_id} у файл {user_file}: {e}")
@@ -30,7 +33,7 @@ def load_user_from_json(user_id: int) -> dict:
             return data
         except Exception as e:
             logging.error(f"Помилка завантаження даних користувача {user_id} з файлу {user_file}: {e}")
-    return {}
+    return {"weights": {}, "test_scores": {}, "test_progress": 0, "day": 1, "finished": False}
 
 async def save_user_data(user_id: int, key: str, value: any) -> None:
     """Save specific user data to their JSON file."""
