@@ -16,15 +16,15 @@ from aiogram.fsm.context import FSMContext
 from aiogram.fsm.state import State, StatesGroup
 import config
 from color_data import (
-    color_dict, evaluation_criteria, color_to_system, evaluation_icons, MENUS
+    color_dict, evaluation_criteria, color_to_system, evaluation_icons, MENUS, WEIGHT_TRACKING_INSTRUCTIONS, REMINDER_TEXTS
 )
 from test_handlers import router as test_router
 from utils import save_user_to_json  # Ensure this is imported
 
 API_TOKEN: str = config.API_TOKEN
 CHANNEL_ID: int = config.CHANNEL_ID
-MENU_TIME = time(12, 00)
-WEIGHT_TIME = time(18, 00)
+MENU_TIME = time(18, 00)
+WEIGHT_TIME = time(12, 00)
 REMINDER_OFFSET_HOURS = 2
 REMINDER_TIME = time((WEIGHT_TIME.hour + REMINDER_OFFSET_HOURS) % 24, WEIGHT_TIME.minute)
 
@@ -34,12 +34,6 @@ USER_DATA_DIR = "user_data"
 
 os.makedirs(USER_DATA_DIR, exist_ok=True)
 
-WEIGHT_TRACKING_INSTRUCTIONS = (
-    "📋 Програму 'Меню та Вага' запущено!\n\n"
-    f"Я надсилатиму вам меню на день щоранку о {MENU_TIME.strftime('%H:%M')} "
-    f"та запитуватиму вашу вагу щовечора о {WEIGHT_TIME.strftime('%H:%M')} "
-    f"протягом {TOTAL_WEIGHT_TRACKING_DAYS} днів."
-)
 WEIGHT_QUESTION = "⚖️ Яка у вас сьогодні вага? Напишіть число в кг (наприклад, 75.5 або 75,5)."
 WEIGHT_REMINDER = "⏰ Нагадую, будь ласка, введіть вашу сьогоднішню вагу."
 
@@ -154,8 +148,12 @@ def get_main_menu() -> InlineKeyboardMarkup:
 
 @router.callback_query(F.data == "call_center")
 async def handle_call_center_callback(callback: types.CallbackQuery) -> None:
-    await callback.message.answer(f"Для зв'язку з підтримкою напишіть: {SUPPORT_USERNAME}")
+    user_id = callback.from_user.id
+    await callback.message.answer(
+        f"Для зв'язку з підтримкою напишіть: {SUPPORT_USERNAME}\nВаш Chat ID: {user_id}"
+    )
     await callback.answer()
+
 
 @router.message(CommandStart())
 async def send_welcome(message: types.Message) -> None:
@@ -222,6 +220,62 @@ async def handle_check_subscription_callback(callback: types.CallbackQuery) -> N
             "❌ Ви все ще не підписані.", reply_markup=get_subscribe_button())
     await callback.answer()
 
+@router.message(Command("admin"))
+async def handle_admin_command(message: types.Message) -> None:
+    user_id = message.from_user.id
+    if user_id in admin_sessions:
+        await message.reply("✅ Ви вже авторизовані як адміністратор. Введіть Chat ID користувача для отримання інформації.")
+    else:
+        await message.reply("🔒 Введіть пароль для доступу до панелі адміністратора:")
+
+@router.message(F.text)
+async def handle_text_message(message: types.Message) -> None:
+    user_id = message.from_user.id
+    text = message.text.strip()
+
+    # Handle admin password or Chat ID
+    if user_id in admin_sessions:
+        if text.isdigit():  # Ensure the input is a valid numeric Chat ID
+            target_user_id = int(text)
+            user_data = load_user_from_json(target_user_id)
+            if user_data:
+                await message.reply(f"📋 Інформація про користувача {target_user_id}:\n\n{json.dumps(user_data, ensure_ascii=False, indent=4)}")
+            else:
+                await message.reply(f"⚠️ Дані для користувача {target_user_id} не знайдено.")
+        else:
+            await message.reply("❌ Невірний формат Chat ID. Введіть числовий Chat ID.")
+        return
+    elif text == ADMIN_PASSWORD:
+        admin_sessions.add(user_id)
+        await message.reply("✅ Авторизація успішна! Введіть Chat ID користувача для отримання інформації.")
+        return
+
+    # Handle weight input
+    user_data = load_user_from_json(user_id)
+    if "weights" not in user_data:
+        user_data["weights"] = {}
+
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    if today_str in user_data["weights"]:
+        await message.reply(f"⚠️ Вага на сьогодні ({today_str}) вже записана: {user_data['weights'][today_str]:.1f} кг.")
+        return
+
+    try:
+        weight = float(text.replace(',', '.'))
+        if not (20 < weight < 300):
+            raise ValueError("Нереальна вага")
+    except ValueError:
+        await message.reply("❌ Будь ласка, введіть вашу вагу коректним числом (наприклад, 75.5 або 75,5).")
+        return
+
+    user_data["weights"][today_str] = weight
+    user_data["last_entry_date"] = today_str
+    user_data["asked_today"] = True
+    save_user_to_json(user_id, user_data)
+
+    await message.reply(f"✅ Вага {weight:.1f} кг збережена. Дякую!")
+
 @router.callback_query(F.data == "start_weight")
 async def handle_start_weight_callback(callback: types.CallbackQuery) -> None:
     user_id = callback.from_user.id
@@ -246,29 +300,41 @@ async def handle_start_weight_callback(callback: types.CallbackQuery) -> None:
     current_day = user_data.get("day", 1)
     today_str = datetime.now().strftime("%Y-%m-%d")
 
-    if today_str not in user_data["weights"]:
+    if not user_data.get("asked_today"):
         await ask_weight(user_id)
         user_data["asked_today"] = True
         save_user_to_json(user_id, user_data)
 
-    await send_menu(user_id, current_day)
-    user_data["menu_sent_today"] = True
-    save_user_to_json(user_id, user_data)
+    if not user_data.get("menu_sent_today"):
+        await send_menu(user_id, current_day)
+        user_data["menu_sent_today"] = True
+        save_user_to_json(user_id, user_data)
 
     await callback.answer(f"Ви на Дні {current_day}. Меню надіслано.")
 
 async def send_menu(user_id: int, day: int) -> bool:
-    image_filename = f"m{day}.png"
-    image_path = os.path.join("img", image_filename)
+    if day == 1:  # Send instructions on the first day
+        instructions_sent = await send_safe_message(user_id, WEIGHT_TRACKING_INSTRUCTIONS)
+        if not instructions_sent:
+            return False
 
-    caption = f"📅 Меню на День {day+1}"
+    menu_text = MENUS.get(day)
+    if not menu_text:
+        logging.error(f"Меню для дня {day} не знайдено в словнику MENUS.")
+        error_message = f"⚠️ Не можу знайти меню для дня {day}. Будь ласка, зв'яжіться з адміністратором ({SUPPORT_USERNAME})."
+        await send_safe_message(user_id, error_message)
+        return False
+
+    caption = f"\n{menu_text}"
     markup = None
-    if day == 3:
+    if day == 1:
         markup = InlineKeyboardMarkup(inline_keyboard=[[InlineKeyboardButton(text="📝 Пройти тест", callback_data="start_test")]])
 
-    photo_sent = False
+    image_filename = f"m{day}.jpg"
+    image_path = os.path.join("img", image_filename)  # Corrected directory path
+
     if os.path.exists(image_path):
-        logging.info(f"Надсилання меню-фото {image_filename} (День {day}/{TOTAL_WEIGHT_TRACKING_DAYS}) користувачу {user_id}")
+        logging.info(f"Надсилання меню-фото {image_filename} (День {day}) користувачу {user_id}")
         try:
             photo_to_send = FSInputFile(image_path)
             await bot.send_photo(
@@ -277,71 +343,31 @@ async def send_menu(user_id: int, day: int) -> bool:
                 caption=caption,
                 reply_markup=markup
             )
-            photo_sent = True
+            return True
         except TelegramAPIError as e:
             logging.error(f"Помилка API при надсиланні фото-меню {image_path} користувачу {user_id}: {e}")
-            if "bot was blocked by the user" in str(e) or "user is deactivated" in str(e):
-                logging.warning(f"Користувач {user_id} заблокував бота або деактивований. Видалення даних.")
-                if user_id in user_weight_data:
-                    del user_weight_data[user_id]
-                user_file = os.path.join(USER_DATA_DIR, f"{user_id}.json")
-                if os.path.exists(user_file):
-                    try:
-                        os.remove(user_file)
-                        logging.info(f"Файл даних для {user_id} видалено.")
-                    except OSError as rm_err:
-                        logging.error(f"Не вдалося видалити файл даних для {user_id}: {rm_err}")
-                return False
-        except Exception as e:
-            logging.error(f"Несподівана помилка при надсиланні фото-меню {image_path} користувачу {user_id}: {e}")
 
-    if not photo_sent:
-        menu_text = MENUS.get(day)
-        if menu_text:
-            logging.info(f"Надсилання текстового меню (Fallback) Дня {day}/{TOTAL_WEIGHT_TRACKING_DAYS} користувачу {user_id}")
-            fallback_note = ""
-            if os.path.exists(image_path):
-                fallback_note = "\n\n_(Не вдалося завантажити зображення меню)_"
-
-            full_text = f"{caption}\n\n{menu_text}{fallback_note}"
-            return await send_safe_message(user_id, full_text, reply_markup=markup, parse_mode="Markdown")
-        else:
-            logging.error(f"Ні зображення ({image_path}), ні тексту в MENUS для дня {day} не знайдено!")
-            error_message = f"⚠️ Не можу знайти меню для дня {day}. Будь ласка, зв'яжіться з адміністратором ({SUPPORT_USERNAME})."
-            await send_safe_message(user_id, error_message)
-            return False
+    # Fallback to text menu if image fails
+    logging.info(f"Надсилання текстового меню (Fallback) Дня {day} користувачу {user_id}")
+    fallback_note = "\n\n_(Не вдалося завантажити зображення меню)_" if os.path.exists(image_path) else ""
+    full_text = f"{caption}{fallback_note}"
+    return await send_safe_message(user_id, full_text, reply_markup=markup, parse_mode="Markdown")
 
 async def ask_weight(user_id: int) -> None:
     logging.info(f"Запит ваги у користувача {user_id}")
     await send_safe_message(user_id, WEIGHT_QUESTION)
 
-@router.message(F.text.regexp(r'^\d+([.,]\d+)?$'))
-async def handle_weight_input(message: types.Message):
-    user_id = message.from_user.id
-    user_data = load_user_from_json(user_id)
-
-    if user_data.get("finished"):
+async def send_reminder(user_id: int, day: int) -> None:
+    reminder_text = REMINDER_TEXTS.get(day)
+    if not reminder_text:
+        logging.warning(f"Немає тексту нагадування для дня {day}.")
         return
 
-    try:
-        weight = float(message.text.replace(',', '.'))
-        if not (20 < weight < 300):
-            raise ValueError("Нереальна вага")
-    except ValueError:
-        await message.reply("❌ Будь ласка, введіть вашу вагу коректним числом (наприклад, 75.5 або 75,5).")
-        return
+    logging.info(f"Надсилання нагадування для дня {day} користувачу {user_id}")
+    await send_safe_message(user_id, reminder_text)
 
-    today_str = datetime.now().strftime("%Y-%m-%d")
-    if today_str in user_data["weights"]:
-        await message.reply(f"⚠️ Вага на сьогодні ({today_str}) вже записана: {user_data['weights'][today_str]:.1f} кг.")
-        return
-
-    user_data["weights"][today_str] = weight
-    user_data["last_entry_date"] = today_str
-    user_data["asked_today"] = True
-    save_user_to_json(user_id, user_data)
-
-    await message.reply(f"✅ Вага {weight:.1f} кг збережена. Дякую!")
+ADMIN_PASSWORD = "art"  # Replace with your desired admin password
+admin_sessions = set()  # To track active admin sessions
 
 async def scheduler():
     logging.info("Планувальник запущено.")
@@ -421,21 +447,9 @@ async def scheduler():
                 if today_str not in user_data.get("weights", {}):
                     if user_data.get('asked_today'):
                         logging.info(f"Планувальник: надсилання нагадування про вагу користувачу {user_id}")
-                        await send_safe_message(user_id, WEIGHT_REMINDER)
+                        await send_reminder(user_id, current_day)
 
         await asyncio.sleep(60)
-
-async def notify_users_on_startup():
-    logging.info("Повідомлення всім активним користувачам про запуск бота.")
-    active_user_ids = list(user_weight_data.keys())
-    for user_id in active_user_ids:
-        user_data = user_weight_data.get(user_id)
-        if user_data and not user_data.get("finished"):
-            try:
-                await send_safe_message(user_id, "🤖 Бот перезапущено! Ви можете продовжити користуватися функціоналом.")
-                logging.info(f"Повідомлення про запуск надіслано активному користувачу {user_id}.")
-            except Exception as e:
-                logging.error(f"Не вдалося надіслати повідомлення про запуск користувачу {user_id}: {e}")
 
 async def main() -> None:
     load_all_users()
@@ -446,7 +460,6 @@ async def main() -> None:
     await bot.delete_webhook(drop_pending_updates=True)
     logging.info("Запуск бота в режимі опитування (polling)...")
 
-    await notify_users_on_startup()
 
     try:
         await dp.start_polling(bot)
